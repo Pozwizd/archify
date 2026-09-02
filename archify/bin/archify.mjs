@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(__dirname, '..');
 
-const TYPES = new Set(['architecture', 'workflow', 'sequence', 'dataflow', 'lifecycle']);
+const TYPES = new Set(['architecture', 'workflow', 'sequence', 'dataflow', 'lifecycle', 'class-diagram']);
 
 function usage() {
   return `Usage:
@@ -31,7 +31,7 @@ function usage() {
   archify demo [output-directory]
 
 Types:
-  architecture, workflow, sequence, dataflow, lifecycle
+  architecture, workflow, sequence, dataflow, lifecycle, class-diagram
 `;
 }
 
@@ -1292,7 +1292,7 @@ async function commandDoctor() {
   if (validatorsExist) {
     try {
       const module = await import(`${pathToFileURL(validators).href}?doctor=${Date.now()}`);
-      validatorsValid = [...TYPES].every((type) => typeof module[type] === 'function');
+      validatorsValid = [...TYPES].every((type) => typeof module[type === 'class-diagram' ? 'classDiagram' : type] === 'function');
     } catch {
       validatorsValid = false;
     }
@@ -1310,6 +1310,7 @@ async function commandDoctor() {
     workflow: 'agent-tool-call.workflow.json',
     sequence: 'cache-miss-request.sequence.json',
     dataflow: 'product-analytics.dataflow.json',
+    'class-diagram': 'booking-domain.class-diagram.json',
     lifecycle: 'agent-run.lifecycle.json',
   };
 

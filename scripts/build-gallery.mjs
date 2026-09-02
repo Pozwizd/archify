@@ -162,6 +162,19 @@ const CASES = [
     descriptionEn: 'A classic AWS web stack with edge delivery, authentication, API services, cache, persistence, and background work.',
     descriptionZh: '经典 AWS Web 栈：边缘分发、鉴权、API 服务、缓存、持久化与后台任务。',
   },
+  {
+    id: 'booking-domain',
+    type: 'class-diagram',
+    input: 'booking-domain.class-diagram.json',
+    output: 'booking-domain.class-diagram.html',
+    focus: 'bookingServiceImpl',
+    view: 'contracts',
+    accent: '#2563eb',
+    titleEn: 'Booking Domain Class Model',
+    titleZh: '预订领域类模型',
+    descriptionEn: 'UML-style classes, interfaces, enum values, exact members, realizations, dependencies, composition, and multiplicities.',
+    descriptionZh: '用 UML 风格展示类、接口、枚举值、准确成员、接口实现、依赖、组合和多重性。',
+  },
 ];
 
 const SHAPES = {
@@ -170,6 +183,7 @@ const SHAPES = {
   sequence: ['participants', 'messages'],
   dataflow: ['nodes', 'flows'],
   lifecycle: ['states', 'transitions'],
+  'class-diagram': ['types', 'relationships'],
 };
 
 // Print-depth type hues shared with the site palette (guide page uses the same map).
@@ -179,6 +193,7 @@ const TYPE_ACCENTS = {
   sequence: '#6d28d9',
   dataflow: '#b45309',
   lifecycle: '#be123c',
+  'class-diagram': '#2563eb',
 };
 
 function digest(buffer) {

@@ -26,7 +26,7 @@ test('semantic relationship labels are preserved and deletion is not a geometry 
 
 test('schema policy documents the workflow v1/v2 compatibility boundary', () => {
   assert.match(schemaReadme, /Workflow[^\n]*schema versions? 1 and 2/i);
-  assert.match(schemaReadme, /other four[^\n]*schema_version[^\n]*1/i);
+  assert.match(schemaReadme, /other five[^\n]*schema_version[^\n]*1/i);
   assert.doesNotMatch(schemaReadme, /schema_version` is `"const": 1`/);
 });
 

@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "diagram_type": "class-diagram",
+  "meta": {
+    "title": "Booking domain classes",
+    "quality_profile": "showcase",
+    "viewBox": [1200, 650],
+    "views": [
+      {
+        "id": "booking-flow",
+        "label": "Booking flow",
+        "focus": ["bookingController", "bookingService", "bookingRepository", "booking"],
+        "note": "Follow the HTTP boundary through the service and repository to the aggregate."
+      },
+      {
+        "id": "contracts",
+        "label": "Contracts",
+        "focus": ["bookingServiceContract", "bookingService", "bookingStatus"],
+        "note": "Inspect the service abstraction and the booking status vocabulary."
+      },
+      {
+        "id": "domain-state",
+        "label": "Domain state",
+        "focus": ["booking", "bookingStatus"],
+        "note": "Inspect the aggregate fields, behavior, status enum, and their composition relationship."
+      }
+    ]
+  },
+  "packages": [
+    { "id": "api", "label": "com.example.booking.api" },
+    { "id": "application", "label": "com.example.booking.application" },
+    { "id": "domain", "label": "com.example.booking.domain" },
+    { "id": "persistence", "label": "com.example.booking.persistence" }
+  ],
+  "types": [
+    {
+      "id": "bookingServiceContract",
+      "kind": "interface",
+      "name": "BookingService",
+      "package": "application",
+      "pos": [400, 30],
+      "size": [300, 100],
+      "methods": [
+        {
+          "visibility": "public",
+          "name": "create",
+          "parameters": [{ "name": "request", "type": "BookingRequest" }],
+          "returns": "Booking"
+        }
+      ]
+    },
+    {
+      "id": "bookingController",
+      "kind": "class",
+      "name": "BookingController",
+      "package": "api",
+      "stereotype": "controller",
+      "pos": [40, 200],
+      "size": [300, 110],
+      "fields": [
+        { "visibility": "private", "name": "service", "type": "BookingService", "final": true }
+      ],
+      "methods": [
+        {
+          "visibility": "public",
+          "name": "create",
+          "parameters": [{ "name": "request", "type": "BookingRequest" }],
+          "returns": "BookingResponse"
+        }
+      ]
+    },
+    {
+      "id": "bookingService",
+      "kind": "class",
+      "name": "DefaultBookingService",
+      "package": "application",
+      "stereotype": "service",
+      "pos": [400, 200],
+      "size": [300, 110],
+      "fields": [
+        { "visibility": "private", "name": "repository", "type": "BookingRepository", "final": true }
+      ],
+      "methods": [
+        {
+          "visibility": "public",
+          "name": "create",
+          "parameters": [{ "name": "request", "type": "BookingRequest" }],
+          "returns": "Booking"
+        }
+      ]
+    },
+    {
+      "id": "bookingRepository",
+      "kind": "interface",
+      "name": "BookingRepository",
+      "package": "persistence",
+      "pos": [760, 200],
+      "size": [300, 110],
+      "methods": [
+        {
+          "visibility": "public",
+          "name": "save",
+          "parameters": [{ "name": "booking", "type": "Booking" }],
+          "returns": "Booking"
+        }
+      ]
+    },
+    {
+      "id": "booking",
+      "kind": "class",
+      "name": "Booking",
+      "package": "domain",
+      "stereotype": "aggregate root",
+      "pos": [760, 370],
+      "size": [300, 150],
+      "fields": [
+        { "visibility": "private", "name": "id", "type": "BookingId", "final": true },
+        { "visibility": "private", "name": "status", "type": "BookingStatus" }
+      ],
+      "methods": [
+        { "visibility": "public", "name": "confirm", "returns": "void" },
+        { "visibility": "public", "name": "cancel", "returns": "void" }
+      ]
+    },
+    {
+      "id": "bookingStatus",
+      "kind": "enum",
+      "name": "BookingStatus",
+      "package": "domain",
+      "pos": [400, 370],
+      "size": [300, 120],
+      "values": ["PENDING", "CONFIRMED", "CANCELLED"]
+    }
+  ],
+  "relationships": [
+    { "id": "service-realizes-contract", "from": "bookingService", "to": "bookingServiceContract", "kind": "realization" },
+    { "id": "controller-uses-service", "from": "bookingController", "to": "bookingService", "kind": "dependency", "label": "delegates" },
+    { "id": "service-uses-repository", "from": "bookingService", "to": "bookingRepository", "kind": "dependency", "label": "persists" },
+    { "id": "repository-manages-booking", "from": "bookingRepository", "to": "booking", "kind": "association", "label": "manages", "toMultiplicity": "*", "navigability": "to" },
+    { "id": "booking-has-status", "from": "booking", "to": "bookingStatus", "kind": "composition", "fromMultiplicity": "1", "toMultiplicity": "1" }
+  ]
+}

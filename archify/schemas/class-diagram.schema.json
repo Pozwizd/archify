@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tt-a1i/archify/schemas/class-diagram.schema.json",
+  "title": "Archify Class Diagram",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "diagram_type", "meta", "types", "relationships"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "diagram_type": { "const": "class-diagram" },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "locale": { "$ref": "common.schema.json#/$defs/locale" },
+        "subtitle": { "type": "string" },
+        "output": { "type": "string" },
+        "animation": { "$ref": "common.schema.json#/$defs/animation" },
+        "visual_preset": { "$ref": "common.schema.json#/$defs/visualPreset" },
+        "quality_profile": { "$ref": "common.schema.json#/$defs/qualityProfile" },
+        "views": { "$ref": "common.schema.json#/$defs/guidedViews" },
+        "legend": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "$ref": "common.schema.json#/$defs/legendMode" },
+            "entries": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "inheritance": { "$ref": "common.schema.json#/$defs/legendEntry" },
+                "realization": { "$ref": "common.schema.json#/$defs/legendEntry" },
+                "dependency": { "$ref": "common.schema.json#/$defs/legendEntry" },
+                "association": { "$ref": "common.schema.json#/$defs/legendEntry" },
+                "aggregation": { "$ref": "common.schema.json#/$defs/legendEntry" },
+                "composition": { "$ref": "common.schema.json#/$defs/legendEntry" }
+              }
+            }
+          }
+        },
+        "viewBox": {
+          "type": "array",
+          "prefixItems": [
+            { "type": "number", "minimum": 480 },
+            { "type": "number", "minimum": 320 }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/id" },
+          "label": { "type": "string", "minLength": 1, "maxLength": 120 }
+        }
+      }
+    },
+    "types": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "name"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/id" },
+          "kind": { "enum": ["class", "abstract-class", "interface", "enum"] },
+          "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "package": { "$ref": "common.schema.json#/$defs/id" },
+          "stereotype": { "type": "string", "minLength": 1, "maxLength": 48 },
+          "pos": { "$ref": "common.schema.json#/$defs/point" },
+          "size": {
+            "type": "array",
+            "prefixItems": [
+              { "type": "number", "minimum": 160 },
+              { "type": "number", "minimum": 72 }
+            ],
+            "items": false,
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "fields": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/member" }
+          },
+          "methods": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["visibility", "name"],
+              "properties": {
+                "visibility": { "$ref": "#/$defs/visibility" },
+                "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+                "parameters": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["name", "type"],
+                    "properties": {
+                      "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+                      "type": { "type": "string", "minLength": 1, "maxLength": 160 }
+                    }
+                  }
+                },
+                "returns": { "type": "string", "minLength": 1, "maxLength": 160 },
+                "static": { "type": "boolean" },
+                "abstract": { "type": "boolean" }
+              }
+            }
+          },
+          "values": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1, "maxLength": 120 }
+          }
+        }
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from", "to", "kind"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/id" },
+          "from": { "$ref": "common.schema.json#/$defs/id" },
+          "to": { "$ref": "common.schema.json#/$defs/id" },
+          "kind": { "enum": ["inheritance", "realization", "dependency", "association", "aggregation", "composition"] },
+          "label": { "type": "string", "maxLength": 120 },
+          "fromMultiplicity": { "type": "string", "minLength": 1, "maxLength": 20 },
+          "toMultiplicity": { "type": "string", "minLength": 1, "maxLength": 20 },
+          "navigability": { "enum": ["from", "to", "both", "none"] }
+        }
+      }
+    },
+    "cards": { "$ref": "common.schema.json#/$defs/cards" }
+  },
+  "$defs": {
+    "visibility": { "enum": ["public", "private", "protected", "package"] },
+    "member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["visibility", "name", "type"],
+      "properties": {
+        "visibility": { "$ref": "#/$defs/visibility" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "type": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "static": { "type": "boolean" },
+        "final": { "type": "boolean" }
+      }
+    }
+  }
+}
