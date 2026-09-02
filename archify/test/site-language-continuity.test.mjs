@@ -333,7 +333,7 @@ test('proof gallery type filters localize with the selected language', () => {
 
   const template = fs.readFileSync(path.join(repoRoot, 'scripts/gallery-template.html'), 'utf8');
   for (const filter of filters) {
-    const placeholder = filter.type.toUpperCase();
+    const placeholder = filter.type.toUpperCase().replaceAll('-', '_');
     assert.ok(
       template.includes(`data-filter="${filter.type}" aria-pressed="false" data-en="[[DIAGRAM_TYPE_${placeholder}_EN]]" data-zh="[[DIAGRAM_TYPE_${placeholder}_ZH]]"`),
       `gallery template: ${filter.type} filter must consume the shared copy source`,

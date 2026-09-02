@@ -4,6 +4,7 @@ export const DIAGRAM_TYPES = Object.freeze([
   'sequence',
   'dataflow',
   'lifecycle',
+  'class-diagram',
 ]);
 
 export const DIAGRAM_TYPE_LABELS = Object.freeze({
@@ -13,6 +14,7 @@ export const DIAGRAM_TYPE_LABELS = Object.freeze({
     sequence: 'Sequence',
     dataflow: 'Data flow',
     lifecycle: 'Lifecycle',
+    'class-diagram': 'Class diagram',
   }),
   zh: Object.freeze({
     architecture: '架构图',
@@ -20,6 +22,7 @@ export const DIAGRAM_TYPE_LABELS = Object.freeze({
     sequence: '时序图',
     dataflow: '数据流',
     lifecycle: '生命周期',
+    'class-diagram': '类图',
   }),
 });
 
@@ -30,7 +33,7 @@ export function diagramTypeCopyReplacements() {
   };
 
   for (const type of DIAGRAM_TYPES) {
-    const placeholder = type.toUpperCase();
+    const placeholder = type.toUpperCase().replaceAll('-', '_');
     replacements[`[[DIAGRAM_TYPE_${placeholder}_EN]]`] = DIAGRAM_TYPE_LABELS.en[type];
     replacements[`[[DIAGRAM_TYPE_${placeholder}_ZH]]`] = DIAGRAM_TYPE_LABELS.zh[type];
   }

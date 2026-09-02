@@ -250,6 +250,31 @@ const RAW_RECIPES = [
       prompt: '用 Archify 生命周期模式建模部署对象。展示排队、构建、验证、等待审批、晋级、回滚以及所有终态，并标注允许每次状态转换的事件和守卫条件。',
     },
   },
+  {
+    id: 'domain-class-model', type: 'class-diagram', proof: 'booking-domain',
+    presentation: { preset: 'blueprint', motion: 'static', views: 'recommended' },
+    start: {
+      en: { descriptionPrompt: 'Use Archify class-diagram mode to model these types: [paste the classes, interfaces, enums, fields, methods, inheritance, implementations, associations, ownership, and multiplicities]. Preserve exact code identifiers, mark unknown relationships instead of inventing them, and keep the diagram focused on one bounded domain.' },
+      zh: { descriptionPrompt: '用 Archify 类图模式建模这些类型：[粘贴类、接口、枚举、字段、方法、继承、实现、关联、所有权和多重性]。保留准确的代码标识符，不要编造未知关系，并让图聚焦在一个有边界的领域内。' },
+    },
+    signals: [['class diagram', 16], ['uml class', 15], ['inheritance', 9], ['interface implementation', 11], ['domain model', 10], ['multiplicity', 8], ['类图', 16], ['继承', 9], ['接口实现', 11], ['领域模型', 10], ['多重性', 8]],
+    en: {
+      title: 'Domain class model', question: 'Which types exist, what do they contain, and how are they related?',
+      summary: 'A UML-style type model with class compartments, exact members, generalization, realization, ownership, and multiplicity.',
+      useWhen: 'Codebase orientation, domain modeling, API design, inheritance review, or documenting a bounded package.',
+      avoidWhen: 'The question is runtime call order, deployment placement, or a broad service landscape rather than static type structure.',
+      include: ['classes, interfaces, and enums', 'important fields and methods', 'inheritance and realization', 'associations and multiplicities'],
+      prompt: 'Analyze the relevant package, then use Archify class-diagram mode to draw its class model. Preserve exact type and member names, distinguish classes, abstract classes, interfaces, and enums, and label inheritance, realization, dependency, association, aggregation, composition, and multiplicities only where supported by evidence.',
+    },
+    zh: {
+      title: '领域类模型', question: '有哪些类型、它们包含什么、彼此是什么关系？',
+      summary: '用 UML 风格分区展示类型成员、泛化、接口实现、所有权和多重性。',
+      useWhen: '适合代码库导览、领域建模、API 设计、继承审查或记录一个有边界的包。',
+      avoidWhen: '如果重点是运行时调用顺序、部署位置或宽泛的服务拓扑，请使用其他图类型。',
+      include: ['类、接口和枚举', '关键字段和方法', '继承与接口实现', '关联与多重性'],
+      prompt: '分析相关代码包，然后用 Archify 类图模式绘制类模型。保留准确的类型名和成员名，区分类、抽象类、接口与枚举；只在代码证据支持时标注继承、实现、依赖、关联、聚合、组合和多重性。',
+    },
+  },
 ];
 
 export const SCENARIO_RECIPES = Object.freeze(RAW_RECIPES.map((recipe) => Object.freeze({
