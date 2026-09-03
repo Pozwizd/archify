@@ -345,6 +345,18 @@ export function analyzeJavaProject(root, options = {}) {
     type.implementsIds = type.implementations.map((name) => resolveReference(name, type, byFqn, bySimple)?.id).filter(Boolean);
     for (const endpoint of type.endpoints) {
       endpoint.typeIds = [];
+      endpoint.parameterTypeIds = [];
+      endpoint.returnTypeIds = [];
+      for (const parameter of endpoint.parameters) {
+        for (const token of typeTokens(parameter.type)) {
+          const target = resolveReference(token, type, byFqn, bySimple);
+          if (target && !endpoint.parameterTypeIds.includes(target.id)) endpoint.parameterTypeIds.push(target.id);
+        }
+      }
+      for (const token of typeTokens(endpoint.returnType)) {
+        const target = resolveReference(token, type, byFqn, bySimple);
+        if (target && !endpoint.returnTypeIds.includes(target.id)) endpoint.returnTypeIds.push(target.id);
+      }
       for (const raw of [...endpoint.parameters.map((item) => item.type), endpoint.returnType]) {
         for (const token of typeTokens(raw)) {
           const target = resolveReference(token, type, byFqn, bySimple);

@@ -39,7 +39,7 @@ function parseArgs(argv) {
   }
   if (!options.repoRoot || !options.output) fail('extract endpoints requires --repo-root and --output.');
   options.relationDepth = parsePositive(options.relationDepth, '--relation-depth', 2, 5);
-  options.maxTypes = parsePositive(options.maxTypes, '--max-types', 15, 40);
+  options.maxTypes = parsePositive(options.maxTypes, '--max-types', 8, 40);
   options.scenariosPerDiagram = parsePositive(options.scenariosPerDiagram, '--scenarios-per-diagram', 3, 5);
   options.locale ||= 'en';
   if (!['en', 'ru'].includes(options.locale)) fail('--locale must be en or ru.');

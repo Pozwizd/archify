@@ -22,7 +22,7 @@ For endpoint-focused diagrams from a Java/Spring repository, prefer the evidence
 node bin/archify.mjs extract endpoints --repo-root <project> --output <directory> [--controller Name] [--locale en|ru]
 ```
 
-It groups output by controller, places at most three endpoint scenarios in Guided Views by default, and records source files and lines in `manifest.json`. Read `references/endpoint-extraction.md` only when changing extraction depth, filters, or output limits.
+It groups output by controller, places at most three isolated horizontal endpoint lanes in Guided Views by default, duplicates shared types per lane with only scenario-relevant members, and records source files and lines in `manifest.json`. Read `references/endpoint-extraction.md` only when changing extraction depth, filters, or output limits.
 
 1. Choose `architecture`, `workflow`, `sequence`, `dataflow`, `lifecycle`, or `class-diagram` from the question.
 2. Read one matching schema in `schemas/`, `schemas/common.schema.json`, and one matching JSON example in `examples/`. Read only those files. Fresh authorship means new stable IDs, domain wording, and layout; use the example for field shape, not facts. New workflow sources use `schema_version: 2` and its readable layout contract; keep `schema_version: 1` only when preserving an existing workflow's fixed geometry. When real product identity matters, query `node bin/archify.mjs brands "<name>" --json`; read `references/brand-marks.md` only for an unknown brand with a user-provided URL.

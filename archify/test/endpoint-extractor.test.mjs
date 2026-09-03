@@ -22,6 +22,9 @@ test('Java source model discovers Spring endpoints and proven type dependencies'
   );
   const controllerDependencies = model.controllers[0].dependencies.map((dependency) => dependency.target);
   assert.ok(controllerDependencies.includes(model.types.find((type) => type.name === 'MemberService').id));
+  const createEndpoint = model.controllers[0].endpoints.find((endpoint) => endpoint.javaMethod === 'create');
+  assert.deepEqual(createEndpoint.parameterTypeIds, [model.types.find((type) => type.name === 'CreateMemberRequest').id]);
+  assert.deepEqual(createEndpoint.returnTypeIds, [model.types.find((type) => type.name === 'MemberResponse').id]);
   const implementation = model.types.find((type) => type.name === 'DefaultMemberService');
   assert.ok(implementation.implementsIds.includes(model.types.find((type) => type.name === 'MemberService').id));
   assert.ok(implementation.dependencies.some((dependency) => dependency.target === model.types.find((type) => type.name === 'MemberRepository').id));
@@ -51,8 +54,23 @@ test('extract endpoints writes controller-grouped diagrams, evidence, and an ind
   assert.equal(firstSource.meta.views.length, 3);
   assert.ok(firstSource.types.some((type) => type.name === 'MemberController'));
   assert.ok(firstSource.types.some((type) => type.name === 'MemberRepository'));
-  const implementation = firstSource.types.find((type) => type.name === 'DefaultMemberService');
-  assert.deepEqual(implementation.methods.map((method) => method.name).sort(), ['create', 'delete', 'findById']);
+  const controllerLanes = firstSource.types.filter((type) => type.name === 'MemberController');
+  assert.equal(controllerLanes.length, 3);
+  const implementationLanes = firstSource.types.filter((type) => type.name === 'DefaultMemberService');
+  assert.equal(implementationLanes.length, 3);
+  assert.deepEqual(
+    implementationLanes.flatMap((type) => type.methods.map((method) => method.name)).sort(),
+    ['create', 'delete', 'findById'],
+  );
+  const focusedIds = firstSource.meta.views.map((view) => new Set(view.focus));
+  assert.ok(focusedIds.every((focus, index) => [...focus].every((id) => id.endsWith(`__s1_${index + 1}`))));
+  assert.equal(new Set(focusedIds.flatMap((focus) => [...focus])).size, focusedIds.reduce((sum, focus) => sum + focus.size, 0));
+  assert.ok(firstSource.relationships.every((relationship) => {
+    const fromLane = relationship.from.match(/__s1_(\d+)$/)?.[1];
+    const toLane = relationship.to.match(/__s1_(\d+)$/)?.[1];
+    return fromLane && fromLane === toLane;
+  }));
+  assert.ok(manifest.diagrams[0].evidence.some((item) => item.sourceId && item.id !== item.sourceId));
   const index = fs.readFileSync(path.join(output, 'index.html'), 'utf8');
   assert.ok(index.includes('MemberController'));
   assert.match(index, /lang="ru"/);

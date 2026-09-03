@@ -2,6 +2,8 @@
 
 `archify extract endpoints` creates a directory of validated, controller-grouped class diagrams from local Java source. It is intentionally conservative: it recognizes Spring MVC annotations and follows only project types and field-receiver calls visible in source. It does not claim runtime tracing, framework wiring verification, or a complete Java compiler model.
 
+Each endpoint is rendered as an isolated horizontal scenario lane. Lanes use the same semantic stage order—request DTO, controller, service, implementation/helper, data, response—and intentionally duplicate shared project types. A duplicated card shows only members used by that endpoint, so following one route never requires crossing into another route. Guided Views focus the matching lane. The source manifest maps every scenario-scoped card `id` back to its stable `sourceId` and source location.
+
 ```bash
 node bin/archify.mjs extract endpoints \
   --repo-root /path/to/project \
@@ -23,8 +25,8 @@ The output directory must not already exist. A successful run writes:
 - `--package prefix` limits controllers to a Java package prefix.
 - `--exclude fragment` skips matching repository-relative paths; repeat as needed.
 - `--relation-depth 1..5` bounds proven field-call traversal; default `2`.
-- `--max-types 1..40` bounds types in one diagram; default `15`.
-- `--scenarios-per-diagram 1..5` bounds endpoint Guided Views; default `3`.
+- `--max-types 1..40` bounds duplicated types in each endpoint lane; default `8`.
+- `--scenarios-per-diagram 1..5` bounds isolated endpoint lanes and Guided Views per diagram; default `3`.
 - `--locale en|ru` localizes the generated index; default `en`. Java identifiers and routes are never translated.
 - `--json` prints a machine-readable receipt.
 

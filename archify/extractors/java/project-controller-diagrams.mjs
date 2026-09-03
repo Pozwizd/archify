@@ -1,16 +1,9 @@
+import { textUnits } from '../../renderers/shared/utils.mjs';
+
 function chunks(items, size) {
   const result = [];
   for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
   return result;
-}
-
-function packageId(packageName) {
-  const cleaned = `pkg_${packageName || 'default'}`.replace(/[^a-zA-Z0-9_-]/g, '_');
-  return /^[a-zA-Z]/.test(cleaned) ? cleaned : `pkg_${cleaned}`;
-}
-
-function relationId(prefix, from, to) {
-  return `${prefix}_${from}_${to}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
 }
 
 function displayType(value) {
@@ -31,26 +24,29 @@ function memberWidth(type) {
     ...(type.methods || []).map((method) => `${visibility[method.visibility]} ${method.name}(${(method.parameters || []).map((item) => `${item.name}: ${item.type}`).join(', ')}): ${method.returns || 'void'}${method.static ? ' {static}' : ''}${method.abstract ? ' {abstract}' : ''}`),
   ];
   const longest = Math.max(textUnits(type.name), ...lines.map(textUnits));
-  return Math.max(260, Math.ceil(longest * 5.1 + 32));
+  return Math.max(220, Math.ceil(longest * 5.1 + 32));
 }
 
-function umlType(type, packageIds, endpointChunk, activeMethods, selected) {
+function umlType(type, endpoint, selection, selected) {
+  const activeMethods = selection.methodsByType.get(type.id);
+  const activeFields = selection.fieldsByType.get(type.id);
   const methods = type.stereotype === 'controller'
-    ? endpointChunk.map((endpoint) => ({
+    ? [{
       visibility: 'public',
       name: endpoint.javaMethod,
-      parameters: endpoint.parameters.map((parameter) => ({ name: parameter.name, type: displayType(parameter.type) })),
+      parameters: endpoint.parameters.slice(0, 4).map((parameter) => ({ name: parameter.name, type: displayType(parameter.type) })),
       returns: displayType(endpoint.returnType) || 'void',
-    }))
-    : type.methods.filter((method) => method.visibility === 'public' && (!activeMethods?.size || activeMethods.has(method.name))).slice(0, 3).map((method) => ({
+    }]
+    : type.methods.filter((method) => method.visibility === 'public' && activeMethods?.has(method.name)).slice(0, 3).map((method) => ({
       visibility: method.visibility,
       name: method.name,
-      parameters: method.parameters.slice(0, 4).map((parameter) => ({ name: parameter.name, type: displayType(parameter.type) })),
-      returns: displayType(method.returns) || 'void',
       ...(method.static ? { static: true } : {}),
       ...(method.abstract ? { abstract: true } : {}),
     }));
-  const fields = type.fields.filter((field) => !field.targetId || selected.has(field.targetId)).slice(0, 4).map((field) => ({
+  const exposeState = ['dto', 'entity'].includes(type.stereotype);
+  const fields = type.fields.filter((field) => (
+    exposeState && (!field.targetId || selected.has(field.targetId)) && (!activeFields?.size || activeFields.has(field.name) || !field.targetId)
+  )).slice(0, 4).map((field) => ({
     visibility: field.visibility,
     name: field.name,
     type: displayType(field.type),
@@ -61,7 +57,6 @@ function umlType(type, packageIds, endpointChunk, activeMethods, selected) {
     id: type.id,
     kind: type.kind,
     name: type.name,
-    package: packageIds.get(type.packageName),
     ...(type.stereotype ? { stereotype: type.stereotype } : {}),
     ...(type.kind === 'enum' ? { values: type.enumValues || [] } : { fields, methods }),
   };
@@ -70,30 +65,12 @@ function umlType(type, packageIds, endpointChunk, activeMethods, selected) {
 function roleRank(type) {
   if (type.stereotype === 'controller') return 0;
   if (type.stereotype === 'dto') return 1;
-  if (type.stereotype === 'service' || type.kind === 'interface') return 1;
-  if (type.stereotype === 'mapper' || type.stereotype === 'repository') return 2;
-  if (type.stereotype === 'entity' || type.kind === 'enum') return 2;
-  return 2;
-}
-
-function layOut(types) {
-  let x = 40;
-  let y = 42;
-  let rowHeight = 0;
-  types.sort((left, right) => roleRank(left) - roleRank(right) || left.name.localeCompare(right.name));
-  for (const type of types) {
-    const height = memberHeight(type);
-    const width = memberWidth(type);
-    if (x > 40 && x + width > 1500) {
-      x = 40;
-      y += rowHeight + 56;
-      rowHeight = 0;
-    }
-    type.pos = [x, y];
-    type.size = [width, height];
-    x += width + 64;
-    rowHeight = Math.max(rowHeight, height);
-  }
+  if (type.stereotype === 'service') return 2;
+  if (type.stereotype === 'mapper') return 3;
+  if (type.stereotype === 'repository') return 4;
+  if (type.stereotype === 'entity' || type.kind === 'enum') return 5;
+  if (type.kind === 'interface') return 2;
+  return 3;
 }
 
 function selectForEndpoint(model, controller, endpoint, depth) {
@@ -102,6 +79,10 @@ function selectForEndpoint(model, controller, endpoint, depth) {
   let frontier = [{ typeId: controller.id, method: endpoint.javaMethod }];
   const visited = new Set();
   const methodsByType = new Map();
+  const fieldsByType = new Map();
+  const depthByType = new Map([[controller.id, 0]]);
+  const callEdges = [];
+  const realizationEdges = [];
   for (let level = 0; level <= depth && frontier.length; level += 1) {
     const next = [];
     for (const item of frontier) {
@@ -116,51 +97,109 @@ function selectForEndpoint(model, controller, endpoint, depth) {
         for (const typeId of method.typeIds || []) selected.add(typeId);
         for (const call of method.callTargets || []) {
           selected.add(call.target);
+          depthByType.set(call.target, Math.min(depthByType.get(call.target) ?? Infinity, level + 1));
+          fieldsByType.set(type.id, new Set([...(fieldsByType.get(type.id) || []), call.receiver]));
+          callEdges.push({ from: type.id, to: call.target, kind: 'dependency', label: call.method });
           next.push({ typeId: call.target, method: call.method });
         }
       }
       for (const implementation of model.types.filter((candidate) => candidate.implementsIds.includes(type.id))) {
         selected.add(implementation.id);
+        depthByType.set(implementation.id, Math.min(depthByType.get(implementation.id) ?? Infinity, level + 1));
+        realizationEdges.push({ from: implementation.id, to: type.id, kind: 'realization' });
         next.push({ typeId: implementation.id, method: item.method });
       }
     }
     frontier = next;
   }
-  return { types: selected, methodsByType };
+  return { types: selected, methodsByType, fieldsByType, depthByType, callEdges, realizationEdges };
 }
 
-function relationshipsFor(model, selected, controller, endpointChunk, activeMethods) {
-  const relations = [];
+function scenarioStage(type, endpoint, controller, selection) {
+  if ((endpoint.parameterTypeIds || []).includes(type.id)) return 0;
+  if (type.id === controller.id) return 1;
+  if ((endpoint.returnTypeIds || []).includes(type.id)) return 5;
+  if (type.stereotype === 'repository' || type.stereotype === 'mapper' || type.stereotype === 'entity' || type.kind === 'enum') return 4;
+  if (type.implementsIds?.length) return 3;
+  const depth = selection.depthByType.get(type.id) ?? 4;
+  return Math.min(4, Math.max(2, depth + 1));
+}
+
+function cloneId(sourceId, scenarioId) {
+  return `${sourceId}__${scenarioId}`;
+}
+
+function cloneRelationships(selection, endpoint, controller, selected, aliases, scenarioId) {
+  const relationships = [];
   const seen = new Set();
   const add = (relation) => {
-    const key = `${relation.from}|${relation.to}|${relation.kind}`;
-    if (relation.from !== relation.to && selected.has(relation.from) && selected.has(relation.to) && !seen.has(key)) {
-      seen.add(key);
-      relations.push({ id: relationId(relation.kind, relation.from, relation.to), ...relation });
-    }
+    const key = `${relation.from}|${relation.to}|${relation.kind}|${relation.label || ''}`;
+    if (relation.from === relation.to || !selected.has(relation.from) || !selected.has(relation.to) || seen.has(key)) return;
+    seen.add(key);
+    relationships.push({
+      id: `r_${scenarioId}_${relationships.length + 1}`,
+      from: aliases.get(relation.from),
+      to: aliases.get(relation.to),
+      kind: relation.kind,
+      ...(relation.label ? { label: relation.label } : {}),
+    });
   };
-  for (const type of model.types) {
-    if (!selected.has(type.id)) continue;
-    if (type.extendsId) add({ from: type.id, to: type.extendsId, kind: 'inheritance' });
-    for (const parent of type.implementsIds) add({ from: type.id, to: parent, kind: 'realization' });
-    for (const dependency of type.dependencies) {
-      const methodName = dependency.reason.match(/^method\s+(.+)$/)?.[1];
-      if (methodName && activeMethods.get(type.id)?.size && !activeMethods.get(type.id).has(methodName)) continue;
-      add({ from: type.id, to: dependency.target, kind: 'dependency', label: dependency.reason.replace(/^field /, 'uses ') });
+  for (const relation of selection.callEdges) add(relation);
+  for (const relation of selection.realizationEdges) add(relation);
+  for (const typeId of endpoint.parameterTypeIds || []) add({ from: typeId, to: controller.id, kind: 'dependency', label: 'request' });
+  for (const typeId of endpoint.returnTypeIds || []) add({ from: controller.id, to: typeId, kind: 'dependency', label: 'response' });
+  return relationships;
+}
+
+function layOutScenarioLanes(lanes) {
+  const slotWidths = new Map();
+  for (const lane of lanes) {
+    const counts = new Map();
+    for (const type of lane.types) {
+      const index = counts.get(type.stage) || 0;
+      counts.set(type.stage, index + 1);
+      type.row = index % 2;
+      type.slot = `${type.stage}:${Math.floor(index / 2)}`;
+      type.size = [memberWidth(type), memberHeight(type)];
+      slotWidths.set(type.slot, Math.max(slotWidths.get(type.slot) || 0, type.size[0]));
     }
   }
-  for (const endpoint of endpointChunk) {
-    for (const typeId of endpoint.typeIds) {
-      add({ from: controller.id, to: typeId, kind: 'dependency', label: 'request/response' });
-    }
+  const slots = [...slotWidths.keys()].sort((left, right) => {
+    const [leftStage, leftIndex] = left.split(':').map(Number);
+    const [rightStage, rightIndex] = right.split(':').map(Number);
+    return leftStage - rightStage || leftIndex - rightIndex;
+  });
+  const slotX = new Map();
+  let x = 40;
+  let previousStage = null;
+  for (const slot of slots) {
+    const stage = Number(slot.split(':')[0]);
+    if (previousStage !== null) x += stage === previousStage ? 48 : 88;
+    slotX.set(slot, x);
+    x += slotWidths.get(slot);
+    previousStage = stage;
   }
-  return relations;
+  let y = 42;
+  for (const lane of lanes) {
+    const rowHeights = [0, 0];
+    for (const type of lane.types) rowHeights[type.row] = Math.max(rowHeights[type.row], type.size[1]);
+    const secondRowY = y + rowHeights[0] + (rowHeights[1] ? 42 : 0);
+    const laneHeight = rowHeights[0] + (rowHeights[1] ? 42 + rowHeights[1] : 0);
+    for (const type of lane.types) {
+      const rowY = type.row === 0 ? y : secondRowY;
+      type.pos = [slotX.get(type.slot), rowY + Math.round((rowHeights[type.row] - type.size[1]) / 2)];
+      delete type.slot;
+      delete type.row;
+      delete type.stage;
+    }
+    y += laneHeight + 110;
+  }
 }
 
 export function projectControllerDiagrams(model, options = {}) {
   const scenariosPerDiagram = options.scenariosPerDiagram || 3;
   const relationDepth = options.relationDepth ?? 2;
-  const maxTypes = options.maxTypes || 15;
+  const maxTypes = options.maxTypes || 8;
   const controllerFilter = options.controller?.toLowerCase();
   const packageFilter = options.packageName;
   const controllers = model.controllers.filter((controller) => (
@@ -175,28 +214,42 @@ export function projectControllerDiagrams(model, options = {}) {
     ));
     const endpointChunks = chunks(orderedEndpoints, scenariosPerDiagram);
     for (const [chunkIndex, endpointChunk] of endpointChunks.entries()) {
-      const endpointSelections = endpointChunk.map((endpoint) => selectForEndpoint(model, controller, endpoint, relationDepth));
-      const combined = new Set(endpointSelections.flatMap((selection) => [...selection.types]));
-      const activeMethods = new Map();
-      for (const selection of endpointSelections) {
-        for (const [typeId, names] of selection.methodsByType) {
-          activeMethods.set(typeId, new Set([...(activeMethods.get(typeId) || []), ...names]));
-        }
+      const lanes = [];
+      const evidence = [];
+      for (const [scenarioIndex, endpoint] of endpointChunk.entries()) {
+        const scenarioId = `s${chunkIndex + 1}_${scenarioIndex + 1}`;
+        const selection = selectForEndpoint(model, controller, endpoint, relationDepth);
+        const candidates = model.types.filter((type) => selection.types.has(type.id));
+        const ordered = [controller, ...candidates.filter((type) => type.id !== controller.id).sort((left, right) => (
+          scenarioStage(left, endpoint, controller, selection) - scenarioStage(right, endpoint, controller, selection)
+          || (selection.depthByType.get(left.id) ?? 99) - (selection.depthByType.get(right.id) ?? 99)
+          || roleRank(left) - roleRank(right)
+          || left.name.localeCompare(right.name)
+        ))];
+        const selectedTypes = ordered.slice(0, maxTypes);
+        const selected = new Set(selectedTypes.map((type) => type.id));
+        if (ordered.length > maxTypes) warnings.push(`${controller.name}.${endpoint.javaMethod}: ${ordered.length - maxTypes} secondary types omitted by --max-types ${maxTypes}.`);
+        const aliases = new Map(selectedTypes.map((type) => [type.id, cloneId(type.id, scenarioId)]));
+        const types = selectedTypes.map((type) => ({
+          ...umlType(type, endpoint, selection, selected),
+          id: aliases.get(type.id),
+          stage: scenarioStage(type, endpoint, controller, selection),
+        })).sort((left, right) => left.stage - right.stage || left.name.localeCompare(right.name));
+        const relationships = cloneRelationships(selection, endpoint, controller, selected, aliases, scenarioId);
+        lanes.push({ scenarioId, endpoint, types, relationships });
+        evidence.push(...selectedTypes.map((type) => ({
+          id: aliases.get(type.id), sourceId: type.id, endpoint: endpoint.id,
+          fqn: type.fqn, path: type.file, line: type.line,
+        })));
       }
-      const priority = [controller, ...model.types.filter((type) => combined.has(type.id) && type.id !== controller.id)]
-        .sort((left, right) => (left.id === controller.id ? -1 : right.id === controller.id ? 1 : roleRank(left) - roleRank(right) || left.name.localeCompare(right.name)));
-      const selectedTypes = priority.slice(0, maxTypes);
-      const selected = new Set(selectedTypes.map((type) => type.id));
-      if (priority.length > maxTypes) warnings.push(`${controller.name} diagram ${chunkIndex + 1}: ${priority.length - maxTypes} secondary types omitted by --max-types ${maxTypes}.`);
-      const packageNames = [...new Set(selectedTypes.map((type) => type.packageName))].sort();
-      const packageIds = new Map(packageNames.map((name) => [name, packageId(name)]));
-      const types = selectedTypes.map((type) => umlType(type, packageIds, endpointChunk, activeMethods.get(type.id), selected));
-      layOut(types);
-      const views = endpointChunk.map((endpoint, index) => ({
+      layOutScenarioLanes(lanes);
+      const types = lanes.flatMap((lane) => lane.types);
+      const relationships = lanes.flatMap((lane) => lane.relationships);
+      const views = lanes.map((lane, index) => ({
         id: `endpoint_${chunkIndex + 1}_${index + 1}`,
-        label: `${endpoint.httpMethod} ${endpoint.path}`.slice(0, 48),
-        focus: [...endpointSelections[index].types].filter((id) => selected.has(id)),
-        note: `${controller.name}.${endpoint.javaMethod}(), line ${endpoint.line}`.slice(0, 140),
+        label: `${lane.endpoint.httpMethod} ${lane.endpoint.path}`.slice(0, 48),
+        focus: lane.types.map((type) => type.id),
+        note: `${controller.name}.${lane.endpoint.javaMethod}(), line ${lane.endpoint.line}`.slice(0, 140),
       }));
       const suffix = endpointChunks.length > 1 ? ` · ${chunkIndex + 1}/${endpointChunks.length}` : '';
       const diagram = {
@@ -208,19 +261,13 @@ export function projectControllerDiagrams(model, options = {}) {
           visual_preset: 'blueprint',
           views,
         },
-        packages: packageNames.map((name) => ({ id: packageIds.get(name), label: name || '(default package)' })),
+        packages: [],
         types,
-        relationships: relationshipsFor(model, selected, controller, endpointChunk, activeMethods),
+        relationships,
       };
       const slug = controller.name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
       const id = endpointChunks.length > 1 ? `${slug}-${chunkIndex + 1}` : slug;
-      results.push({
-        id,
-        controller,
-        endpoints: endpointChunk,
-        diagram,
-        evidence: selectedTypes.map((type) => ({ id: type.id, fqn: type.fqn, path: type.file, line: type.line })),
-      });
+      results.push({ id, controller, endpoints: endpointChunk, diagram, evidence });
     }
   }
   if (!results.length && model.controllers.length && (controllerFilter || packageFilter)) {
@@ -228,4 +275,3 @@ export function projectControllerDiagrams(model, options = {}) {
   }
   return { diagrams: results, warnings };
 }
-import { textUnits } from '../../renderers/shared/utils.mjs';
