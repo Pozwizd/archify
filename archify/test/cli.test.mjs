@@ -77,6 +77,7 @@ test('cli: help lists commands and diagram types', () => {
   assert.match(result.stdout, /archify deliver <type>/);
   assert.match(result.stdout, /archify preview <type>/);
   assert.match(result.stdout, /archify visual-check <output\.html>/);
+  assert.match(result.stdout, /archify extract endpoints --repo-root/);
   assert.match(result.stdout, /--open/);
   assert.match(result.stdout, /--repo-root path \(architecture only\)/);
   assert.match(result.stdout, /archify guide \[scenario or question\]/);
@@ -92,6 +93,7 @@ test('cli: doctor reports a complete installation is ready', () => {
   assert.match(result.stdout, /\[ok\] Core template/);
   assert.match(result.stdout, /\[ok\] Example renderer/);
   assert.match(result.stdout, /\[ok\] Live preview runtime/);
+  assert.match(result.stdout, /\[ok\] Java\/Spring endpoint extractor/);
   assert.match(result.stdout, /\[ok\] Scenario recipe guide/);
   assert.match(result.stdout, /\[ok\] Progressive authoring references/);
   assert.match(result.stdout, /\[ok\] Architecture compare runtime and proof fixtures/);
