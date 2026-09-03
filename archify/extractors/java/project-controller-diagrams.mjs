@@ -169,15 +169,6 @@ function onboardingCards(controller, endpoint, typeCount, relationshipCount, loc
   if (locale === 'ru') {
     return [
       {
-        dot: 'cyan',
-        title: 'Как читать схему',
-        items: [
-          'Следуйте слева направо: вход → контроллер → сервис → реализация → данные → ответ.',
-          'Номер над классом показывает этап сценария, а не порядок выполнения каждой внутренней операции.',
-          'Нажмите на класс, чтобы увидеть его входящие и исходящие зависимости.',
-        ],
-      },
-      {
         dot: 'emerald',
         title: 'Точка входа',
         items: [
@@ -189,15 +180,6 @@ function onboardingCards(controller, endpoint, typeCount, relationshipCount, loc
     ];
   }
   return [
-    {
-      dot: 'cyan',
-      title: 'How to read this diagram',
-      items: [
-        'Follow left to right: request → controller → service → implementation → data → response.',
-        'The number above a class marks its scenario stage, not the exact order of every internal operation.',
-        'Select a class to inspect its incoming and outgoing dependencies.',
-      ],
-    },
     {
       dot: 'emerald',
       title: 'Entry point',

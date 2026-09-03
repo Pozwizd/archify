@@ -19,7 +19,7 @@ function usage() {
   archify deliver <type> <input.json> [output.html] [--json] [--open] [--quality standard|showcase] [--repo-root path (architecture only)]
   archify preview <type> <input.json> [output.html] [--no-open] [--quality standard|showcase] [--repo-root path (architecture only)]
   archify validate <type> <input.json> [--json] [--layout-json] [--quality standard|showcase] [--repo-root path (architecture only)]
-  archify extract endpoints --repo-root <path> --output <directory> [--mode onboarding|reference] [--controller name] [--package prefix] [--locale en|ru] [--scenarios-per-diagram 1..5] [--json]
+  archify extract endpoints --repo-root <path> --output <directory> [--mode onboarding|reference] [--controller name] [--package prefix] [--locale en|ru] [--scenarios-per-diagram 1..5] [--ai] [--ai-model model] [--json]
   archify migrate workflow <old.json> <new.json> --to-schema 2 [--json]
   archify inspect <type> <input.json>
   archify check <output.html>

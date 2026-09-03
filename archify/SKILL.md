@@ -19,7 +19,7 @@ Use this bounded path for ordinary generation. Do not read the optional Viewer R
 For endpoint-focused diagrams from a Java/Spring repository, prefer the evidence-constrained extractor over manual reconstruction:
 
 ```bash
-node bin/archify.mjs extract endpoints --repo-root <project> --output <directory> [--mode onboarding|reference] [--controller Name] [--locale en|ru]
+node bin/archify.mjs extract endpoints --repo-root <project> --output <directory> [--mode onboarding|reference] [--controller Name] [--locale en|ru] [--ai] [--ai-model model]
 ```
 
 It defaults to onboarding mode: one compact diagram per endpoint, numbered semantic stages, controller-grouped navigation, reading guidance, and only scenario-relevant members. Use `--mode reference` for the denser view with up to three isolated endpoint lanes per diagram. Source files and lines remain in `manifest.json`. Read `references/endpoint-extraction.md` only when changing extraction depth, filters, or output limits.

@@ -160,7 +160,7 @@ node archify/bin/archify.mjs guide "Show an API request with Redis cache miss"
 node archify/bin/archify.mjs guide "Map Kafka topics, consumer groups, replay, and DLQ" --json
 ```
 
-For a Java/Spring repository, generate endpoint-focused class diagrams grouped by controller. The default onboarding mode creates one compact, numbered scenario per endpoint and a controller-grouped learning index; use `--mode reference` for denser multi-scenario diagrams. Shared types are trimmed to relevant members. Use `--controller TraineeController` for one controller or `--locale ru` for a Russian index. See the [endpoint extraction contract](archify/references/endpoint-extraction.md).
+For a Java/Spring repository, generate endpoint-focused class diagrams grouped by controller. The default onboarding mode creates one compact, numbered scenario per endpoint and a controller-grouped learning index; use `--mode reference` for denser multi-scenario diagrams. Shared types are trimmed to relevant members. Use `--controller TraineeController` for one controller or `--locale ru` for a Russian index. Add `--ai` to let an installed Codex CLI replace generic guidance with evidence-grounded implementation explanations. See the [endpoint extraction contract](archify/references/endpoint-extraction.md).
 
 `node archify/bin/archify.mjs extract endpoints --repo-root /path/to/project --output /tmp/endpoint-diagrams`
 

@@ -6,6 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyzeJavaProject } from '../extractors/java/source-model.mjs';
+import { projectControllerDiagrams } from '../extractors/java/project-controller-diagrams.mjs';
+import { enrichEndpointDiagramsWithCodex } from '../extractors/java/enrich-endpoint-ai.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(__dirname, '..');
@@ -100,8 +102,56 @@ test('extract endpoints defaults to one compact onboarding scenario per diagram'
   assert.match(index, /class="controller-group"/);
   assert.match(index, /1 диаграмма|4 диаграммы/);
   assert.doesNotMatch(index, /1 классов|1 связей/);
-  assert.equal(source.cards.length, 2);
-  assert.match(source.cards[0].title, /Как читать/);
+  assert.equal(source.cards.length, 1);
+  assert.match(source.cards[0].title, /Точка входа/);
+  assert.doesNotMatch(JSON.stringify(source.cards), /Как читать/);
+});
+
+test('AI enrichment replaces generic guidance with evidence-grounded implementation notes', () => {
+  const model = analyzeJavaProject(fixture);
+  const projection = projectControllerDiagrams(model, {
+    mode: 'onboarding', locale: 'ru', relationDepth: 2, maxTypes: 7, scenariosPerDiagram: 1, excludes: [],
+  });
+  let receivedPrompt = '';
+  const result = enrichEndpointDiagramsWithCodex(projection, fixture, {
+    locale: 'ru',
+    codexRunner({ prompt, schema }) {
+      receivedPrompt = prompt;
+      return {
+        analyses: schema.properties.analyses.items.properties.analysisId.enum.map((analysisId) => {
+          const diagram = projection.diagrams.find((item) => item.id === analysisId);
+          const evidence = [...new Map(diagram.evidence.map((item) => [item.path, { path: item.path, line: item.line }])).values()].slice(0, 2);
+          return {
+            analysisId,
+            summary: 'Эндпоинт выполняет подтверждённый исходным кодом пользовательский сценарий.',
+            implementation: ['Контроллер принимает запрос.', 'Сервис выполняет основную операцию.'],
+            features: ['Поведение описано только по найденным вызовам.'],
+            evidence,
+          };
+        }),
+      };
+    },
+  });
+  assert.equal(result.analyses, projection.diagrams.length);
+  assert.match(receivedPrompt, /in Russian/);
+  assert.ok(projection.diagrams.every((item) => item.diagram.cards.length === 4));
+  assert.ok(projection.diagrams.every((item) => item.diagram.cards[0].title === 'Что делает сценарий'));
+  assert.ok(projection.diagrams.every((item) => item.aiAnalysis.evidence.length >= 1));
+});
+
+test('extract endpoints limits AI explanations to one-scenario onboarding diagrams', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'archify-endpoint-ai-options-'));
+  const reference = spawnSync(process.execPath, [
+    cli, 'extract', 'endpoints', '--repo-root', fixture, '--output', path.join(tmp, 'reference'), '--mode', 'reference', '--ai',
+  ], { encoding: 'utf8' });
+  assert.notEqual(reference.status, 0);
+  assert.match(reference.stderr, /--ai requires --mode onboarding/);
+
+  const modelWithoutAi = spawnSync(process.execPath, [
+    cli, 'extract', 'endpoints', '--repo-root', fixture, '--output', path.join(tmp, 'model'), '--ai-model', 'gpt-example',
+  ], { encoding: 'utf8' });
+  assert.notEqual(modelWithoutAi.status, 0);
+  assert.match(modelWithoutAi.stderr, /--ai-model requires --ai/);
 });
 
 test('extract endpoints rejects unsupported index locales', () => {
