@@ -8,7 +8,7 @@ Each endpoint is rendered as an isolated horizontal scenario lane. Lanes use the
 node bin/archify.mjs extract endpoints \
   --repo-root /path/to/project \
   --output /tmp/endpoint-diagrams \
-  --scenarios-per-diagram 3 \
+  --mode onboarding \
   --locale en
 ```
 
@@ -21,13 +21,14 @@ The output directory must not already exist. A successful run writes:
 
 ## Options
 
+- `--mode onboarding|reference` selects progressive onboarding output or denser reference output; default `onboarding`. Onboarding creates one diagram per endpoint, uses numbered semantic stages, adds reading guidance, and groups scenario cards by controller in the index. Reference mode defaults to three endpoint lanes per diagram.
 - `--controller Name` selects one simple or fully qualified controller name.
 - `--package prefix` limits controllers to a Java package prefix.
 - `--exclude fragment` skips matching repository-relative paths; repeat as needed.
 - `--relation-depth 1..5` bounds proven field-call traversal; default `2`.
-- `--max-types 1..40` bounds duplicated types in each endpoint lane; default `8`.
-- `--scenarios-per-diagram 1..5` bounds isolated endpoint lanes and Guided Views per diagram; default `3`.
-- `--locale en|ru` localizes the generated index; default `en`. Java identifiers and routes are never translated.
+- `--max-types 1..40` bounds duplicated types in each endpoint lane; default `7` in onboarding mode and `8` in reference mode.
+- `--scenarios-per-diagram 1..5` overrides the number of isolated endpoint lanes and Guided Views per diagram; default `1` in onboarding mode and `3` in reference mode.
+- `--locale en|ru` localizes the generated index and authored onboarding guidance; default `en`. Java identifiers and routes are never translated. The generic Viewer controls currently fall back to English for Russian output.
 - `--json` prints a machine-readable receipt.
 
 Directories named `.git`, `.idea`, `.gradle`, `build`, `target`, `node_modules`, and `out`, plus symbolic links, are skipped. When the type cap omits secondary types, the manifest and index retain an explicit warning.

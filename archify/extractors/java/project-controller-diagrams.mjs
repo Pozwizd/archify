@@ -27,7 +27,14 @@ function memberWidth(type) {
   return Math.max(220, Math.ceil(longest * 5.1 + 32));
 }
 
-function umlType(type, endpoint, selection, selected) {
+function onboardingStageLabel(stage, locale) {
+  const labels = locale === 'ru'
+    ? ['вход', 'контроллер', 'сервис', 'реализация', 'данные', 'ответ']
+    : ['request', 'controller', 'service', 'implementation', 'data', 'response'];
+  return `${stage + 1} · ${labels[stage]}`;
+}
+
+function umlType(type, endpoint, selection, selected, stage, options) {
   const activeMethods = selection.methodsByType.get(type.id);
   const activeFields = selection.fieldsByType.get(type.id);
   const methods = type.stereotype === 'controller'
@@ -57,7 +64,9 @@ function umlType(type, endpoint, selection, selected) {
     id: type.id,
     kind: type.kind,
     name: type.name,
-    ...(type.stereotype ? { stereotype: type.stereotype } : {}),
+    ...(options.mode === 'onboarding'
+      ? { stereotype: onboardingStageLabel(stage, options.locale) }
+      : type.stereotype ? { stereotype: type.stereotype } : {}),
     ...(type.kind === 'enum' ? { values: type.enumValues || [] } : { fields, methods }),
   };
 }
@@ -151,6 +160,56 @@ function cloneRelationships(selection, endpoint, controller, selected, aliases, 
   return relationships;
 }
 
+function onboardingCards(controller, endpoint, typeCount, relationshipCount, locale) {
+  const russianCount = (value, forms) => {
+    const mod100 = value % 100;
+    const mod10 = value % 10;
+    return `${value} ${mod100 >= 11 && mod100 <= 14 ? forms[2] : mod10 === 1 ? forms[0] : mod10 >= 2 && mod10 <= 4 ? forms[1] : forms[2]}`;
+  };
+  if (locale === 'ru') {
+    return [
+      {
+        dot: 'cyan',
+        title: 'Как читать схему',
+        items: [
+          'Следуйте слева направо: вход → контроллер → сервис → реализация → данные → ответ.',
+          'Номер над классом показывает этап сценария, а не порядок выполнения каждой внутренней операции.',
+          'Нажмите на класс, чтобы увидеть его входящие и исходящие зависимости.',
+        ],
+      },
+      {
+        dot: 'emerald',
+        title: 'Точка входа',
+        items: [
+          `${endpoint.httpMethod} ${endpoint.path}`,
+          `${controller.name}.${endpoint.javaMethod}() · строка ${endpoint.line}`,
+          `В схеме: ${russianCount(typeCount, ['класс', 'класса', 'классов'])} и ${russianCount(relationshipCount, ['связь', 'связи', 'связей'])}.`,
+        ],
+      },
+    ];
+  }
+  return [
+    {
+      dot: 'cyan',
+      title: 'How to read this diagram',
+      items: [
+        'Follow left to right: request → controller → service → implementation → data → response.',
+        'The number above a class marks its scenario stage, not the exact order of every internal operation.',
+        'Select a class to inspect its incoming and outgoing dependencies.',
+      ],
+    },
+    {
+      dot: 'emerald',
+      title: 'Entry point',
+      items: [
+        `${endpoint.httpMethod} ${endpoint.path}`,
+        `${controller.name}.${endpoint.javaMethod}() · line ${endpoint.line}`,
+        `Scope: ${typeCount} types and ${relationshipCount} relationships.`,
+      ],
+    },
+  ];
+}
+
 function layOutScenarioLanes(lanes) {
   const slotWidths = new Map();
   for (const lane of lanes) {
@@ -197,9 +256,10 @@ function layOutScenarioLanes(lanes) {
 }
 
 export function projectControllerDiagrams(model, options = {}) {
-  const scenariosPerDiagram = options.scenariosPerDiagram || 3;
+  const mode = options.mode || 'onboarding';
+  const scenariosPerDiagram = options.scenariosPerDiagram || (mode === 'onboarding' ? 1 : 3);
   const relationDepth = options.relationDepth ?? 2;
-  const maxTypes = options.maxTypes || 8;
+  const maxTypes = options.maxTypes || (mode === 'onboarding' ? 7 : 8);
   const controllerFilter = options.controller?.toLowerCase();
   const packageFilter = options.packageName;
   const controllers = model.controllers.filter((controller) => (
@@ -228,13 +288,18 @@ export function projectControllerDiagrams(model, options = {}) {
         ))];
         const selectedTypes = ordered.slice(0, maxTypes);
         const selected = new Set(selectedTypes.map((type) => type.id));
-        if (ordered.length > maxTypes) warnings.push(`${controller.name}.${endpoint.javaMethod}: ${ordered.length - maxTypes} secondary types omitted by --max-types ${maxTypes}.`);
+        if (ordered.length > maxTypes) warnings.push(options.locale === 'ru'
+          ? `${controller.name}.${endpoint.javaMethod}: скрыто второстепенных типов: ${ordered.length - maxTypes} (лимит --max-types ${maxTypes}).`
+          : `${controller.name}.${endpoint.javaMethod}: ${ordered.length - maxTypes} secondary types omitted by --max-types ${maxTypes}.`);
         const aliases = new Map(selectedTypes.map((type) => [type.id, cloneId(type.id, scenarioId)]));
-        const types = selectedTypes.map((type) => ({
-          ...umlType(type, endpoint, selection, selected),
-          id: aliases.get(type.id),
-          stage: scenarioStage(type, endpoint, controller, selection),
-        })).sort((left, right) => left.stage - right.stage || left.name.localeCompare(right.name));
+        const types = selectedTypes.map((type) => {
+          const stage = scenarioStage(type, endpoint, controller, selection);
+          return {
+            ...umlType(type, endpoint, selection, selected, stage, { mode, locale: options.locale }),
+            id: aliases.get(type.id),
+            stage,
+          };
+        }).sort((left, right) => left.stage - right.stage || left.name.localeCompare(right.name));
         const relationships = cloneRelationships(selection, endpoint, controller, selected, aliases, scenarioId);
         lanes.push({ scenarioId, endpoint, types, relationships });
         evidence.push(...selectedTypes.map((type) => ({
@@ -249,9 +314,11 @@ export function projectControllerDiagrams(model, options = {}) {
         id: `endpoint_${chunkIndex + 1}_${index + 1}`,
         label: `${lane.endpoint.httpMethod} ${lane.endpoint.path}`.slice(0, 48),
         focus: lane.types.map((type) => type.id),
-        note: `${controller.name}.${lane.endpoint.javaMethod}(), line ${lane.endpoint.line}`.slice(0, 140),
+        note: `${controller.name}.${lane.endpoint.javaMethod}() · ${options.locale === 'ru' ? 'строка' : 'line'} ${lane.endpoint.line}`.slice(0, 140),
       }));
-      const suffix = endpointChunks.length > 1 ? ` · ${chunkIndex + 1}/${endpointChunks.length}` : '';
+      const suffix = mode === 'onboarding' && endpointChunk.length === 1
+        ? ` · ${endpointChunk[0].httpMethod} ${endpointChunk[0].path}`
+        : endpointChunks.length > 1 ? ` · ${chunkIndex + 1}/${endpointChunks.length}` : '';
       const diagram = {
         schema_version: 1,
         diagram_type: 'class-diagram',
@@ -264,6 +331,9 @@ export function projectControllerDiagrams(model, options = {}) {
         packages: [],
         types,
         relationships,
+        ...(mode === 'onboarding' && endpointChunk.length === 1
+          ? { cards: onboardingCards(controller, endpointChunk[0], types.length, relationships.length, options.locale) }
+          : {}),
       };
       const slug = controller.name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
       const id = endpointChunks.length > 1 ? `${slug}-${chunkIndex + 1}` : slug;
@@ -271,7 +341,9 @@ export function projectControllerDiagrams(model, options = {}) {
     }
   }
   if (!results.length && model.controllers.length && (controllerFilter || packageFilter)) {
-    warnings.push('No controllers matched the requested --controller or --package filter.');
+    warnings.push(options.locale === 'ru'
+      ? 'Ни один контроллер не соответствует фильтру --controller или --package.'
+      : 'No controllers matched the requested --controller or --package filter.');
   }
   return { diagrams: results, warnings };
 }

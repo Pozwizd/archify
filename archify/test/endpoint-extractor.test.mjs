@@ -35,7 +35,7 @@ test('extract endpoints writes controller-grouped diagrams, evidence, and an ind
   const output = path.join(tmp, 'result');
   const result = spawnSync(process.execPath, [
     cli, 'extract', 'endpoints', '--repo-root', fixture, '--output', output,
-    '--scenarios-per-diagram', '3', '--locale', 'ru', '--json',
+    '--mode', 'reference', '--scenarios-per-diagram', '3', '--locale', 'ru', '--json',
   ], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const receipt = JSON.parse(result.stdout);
@@ -77,6 +77,33 @@ test('extract endpoints writes controller-grouped diagrams, evidence, and an ind
   assert.match(index, /Открыть диаграмму/);
 });
 
+test('extract endpoints defaults to one compact onboarding scenario per diagram', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'archify-endpoint-onboarding-'));
+  const output = path.join(tmp, 'result');
+  const result = spawnSync(process.execPath, [
+    cli, 'extract', 'endpoints', '--repo-root', fixture, '--output', output, '--locale', 'ru', '--json',
+  ], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const receipt = JSON.parse(result.stdout);
+  assert.equal(receipt.diagrams, 4);
+  const manifest = JSON.parse(fs.readFileSync(path.join(output, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.options.mode, 'onboarding');
+  assert.equal(manifest.options.scenariosPerDiagram, 1);
+  assert.equal(manifest.options.maxTypes, 7);
+  assert.ok(manifest.diagrams.every((entry) => entry.endpoints.length === 1));
+  const source = JSON.parse(fs.readFileSync(path.join(output, manifest.diagrams[0].source), 'utf8'));
+  assert.ok(source.types.some((type) => type.stereotype === '1 · вход'));
+  assert.ok(source.types.some((type) => type.stereotype === '2 · контроллер'));
+  const index = fs.readFileSync(path.join(output, 'index.html'), 'utf8');
+  assert.match(index, /Карта эндпоинтов для онбординга/);
+  assert.match(index, /Изучить сценарий/);
+  assert.match(index, /class="controller-group"/);
+  assert.match(index, /1 диаграмма|4 диаграммы/);
+  assert.doesNotMatch(index, /1 классов|1 связей/);
+  assert.equal(source.cards.length, 2);
+  assert.match(source.cards[0].title, /Как читать/);
+});
+
 test('extract endpoints rejects unsupported index locales', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'archify-endpoint-locale-'));
   const result = spawnSync(process.execPath, [
@@ -84,6 +111,15 @@ test('extract endpoints rejects unsupported index locales', () => {
   ], { encoding: 'utf8' });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /--locale must be en or ru/);
+});
+
+test('extract endpoints rejects unsupported modes', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'archify-endpoint-mode-'));
+  const result = spawnSync(process.execPath, [
+    cli, 'extract', 'endpoints', '--repo-root', fixture, '--output', path.join(tmp, 'result'), '--mode', 'dense',
+  ], { encoding: 'utf8' });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--mode must be onboarding or reference/);
 });
 
 test('extract endpoints refuses to overwrite an existing output directory', () => {
