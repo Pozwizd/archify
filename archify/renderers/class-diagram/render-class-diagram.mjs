@@ -13,7 +13,14 @@ import {
 } from '../shared/cli.mjs';
 import { throwDiagnosticProblems } from '../shared/diagnostics.mjs';
 import { legendFootprint, resolveLegend, renderLegend as renderResolvedLegend } from '../shared/legend.mjs';
-import { labelPoint, rectsOverlap, roundedPath, routePointsValue } from '../shared/geometry.mjs';
+import {
+  cleanFlowProblems,
+  labelPoint,
+  rectsOverlap,
+  roundedPath,
+  routePointsValue,
+  segmentIntersectsRect,
+} from '../shared/geometry.mjs';
 import { translateMessage as i18nText } from '../shared/i18n.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -122,6 +129,7 @@ const measured = sourceTypes.map((type) => {
 });
 const types = new Map(measured.map((type) => [type.id, type]));
 const packages = new Map((diagram.packages || []).map((item) => [item.id, item]));
+const routeCache = new WeakMap();
 
 const maxX = Math.max(480, ...measured.map((type) => type.x + type.width + layout.margin));
 const maxY = Math.max(260, ...measured.map((type) => type.y + type.height + layout.margin));
@@ -168,6 +176,18 @@ function validateClassDiagram() {
     if (!types.has(relation.to)) problems.push(`/relationships/${index}/to references unknown type "${relation.to}".`);
     if (relation.from === relation.to) problems.push(`/relationships/${index} must not connect type "${relation.from}" to itself.`);
   }
+  const routable = (diagram.relationships || []).filter((relation) => (
+    relation.from !== relation.to && types.has(relation.from) && types.has(relation.to)
+  ));
+  problems.push(...cleanFlowProblems({
+    relations: routable,
+    obstacles: measured,
+    pathFor: (relation) => ({ points: pathFor(relation) }),
+    diagramType: 'class-diagram',
+    relationCollection: 'relationships',
+    obstacleKind: 'type',
+    routeHint: 'move the type or leave enough horizontal/vertical corridor space for automatic routing',
+  }));
   if (problems.length) {
     throwDiagnosticProblems('Class diagram validation failed', problems, {
       code: 'class-diagram/invalid',
@@ -191,15 +211,80 @@ function anchorPair(relation) {
     : [[from.cx, from.y], [to.cx, to.y + to.height]];
 }
 
+function compactRoute(points) {
+  const compact = [];
+  for (const point of points) {
+    const previous = compact[compact.length - 1];
+    if (!previous || previous[0] !== point[0] || previous[1] !== point[1]) compact.push(point);
+  }
+  let index = 1;
+  while (index < compact.length - 1) {
+    const previous = compact[index - 1];
+    const current = compact[index];
+    const next = compact[index + 1];
+    if ((previous[0] === current[0] && current[0] === next[0]) || (previous[1] === current[1] && current[1] === next[1])) {
+      compact.splice(index, 1);
+    } else {
+      index += 1;
+    }
+  }
+  return compact;
+}
+
+function routeIsClear(points, relation) {
+  const endpoints = new Set([relation.from, relation.to]);
+  return points.every(([x, y]) => x >= 4 && y >= 4 && x <= viewBox[0] - 4 && y <= viewBox[1] - 4)
+    && measured.every((type) => endpoints.has(type.id) || points.slice(0, -1).every((start, index) => (
+      !segmentIntersectsRect({ start, end: points[index + 1] }, type, 6)
+    )));
+}
+
+function routeScore(points) {
+  const length = points.slice(0, -1).reduce((sum, point, index) => (
+    sum + Math.abs(points[index + 1][0] - point[0]) + Math.abs(points[index + 1][1] - point[1])
+  ), 0);
+  return length + Math.max(0, points.length - 2) * 24;
+}
+
 function pathFor(relation) {
+  if (routeCache.has(relation)) return routeCache.get(relation);
   const [start, end] = anchorPair(relation);
-  if (start[0] === end[0] || start[1] === end[1]) return [start, end];
+  const candidates = start[0] === end[0] || start[1] === end[1] ? [[start, end]] : [];
   if (Math.abs(end[0] - start[0]) >= Math.abs(end[1] - start[1])) {
     const middle = (start[0] + end[0]) / 2;
-    return [start, [middle, start[1]], [middle, end[1]], end];
+    candidates.push([start, [middle, start[1]], [middle, end[1]], end]);
+    const direction = end[0] >= start[0] ? 1 : -1;
+    const startStub = [start[0] + direction * 18, start[1]];
+    const endStub = [end[0] - direction * 18, end[1]];
+    const channels = new Set([(start[1] + end[1]) / 2]);
+    for (const type of measured) {
+      if (type.id === relation.from || type.id === relation.to) continue;
+      channels.add(type.y - 18);
+      channels.add(type.y + type.height + 18);
+    }
+    for (const channelY of channels) {
+      candidates.push([start, startStub, [startStub[0], channelY], [endStub[0], channelY], endStub, end]);
+    }
+  } else {
+    const middle = (start[1] + end[1]) / 2;
+    candidates.push([start, [start[0], middle], [end[0], middle], end]);
+    const direction = end[1] >= start[1] ? 1 : -1;
+    const startStub = [start[0], start[1] + direction * 18];
+    const endStub = [end[0], end[1] - direction * 18];
+    const channels = new Set([(start[0] + end[0]) / 2]);
+    for (const type of measured) {
+      if (type.id === relation.from || type.id === relation.to) continue;
+      channels.add(type.x - 18);
+      channels.add(type.x + type.width + 18);
+    }
+    for (const channelX of channels) {
+      candidates.push([start, startStub, [channelX, startStub[1]], [channelX, endStub[1]], endStub, end]);
+    }
   }
-  const middle = (start[1] + end[1]) / 2;
-  return [start, [start[0], middle], [end[0], middle], end];
+  const clear = candidates.map(compactRoute).filter((points) => routeIsClear(points, relation));
+  const route = (clear.length ? clear : candidates.map(compactRoute)).sort((left, right) => routeScore(left) - routeScore(right))[0];
+  routeCache.set(relation, route);
+  return route;
 }
 
 function markerAttrs(relation) {

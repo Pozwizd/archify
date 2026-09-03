@@ -73,3 +73,32 @@ test('class diagram rejects overlapping type compartments', () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr || result.stdout, /overlap|clearance/i);
 });
+
+test('class diagram automatically routes a relationship around an unrelated type', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'archify-class-diagram-routing-'));
+  const input = path.join(tmp, 'routing.json');
+  const output = path.join(tmp, 'routing.html');
+  const fixture = {
+    schema_version: 1,
+    diagram_type: 'class-diagram',
+    meta: { title: 'Obstacle routing', quality_profile: 'standard' },
+    packages: [],
+    types: [
+      { id: 'source', kind: 'class', name: 'Source', pos: [40, 100], size: [220, 84] },
+      { id: 'blocker', kind: 'class', name: 'Blocker', pos: [360, 100], size: [220, 84] },
+      { id: 'target', kind: 'class', name: 'Target', pos: [680, 100], size: [220, 84] },
+    ],
+    relationships: [{ id: 'source-target', from: 'source', to: 'target', kind: 'dependency', label: 'calls' }],
+  };
+  fs.writeFileSync(input, `${JSON.stringify(fixture)}\n`);
+  const result = run(['render', 'class-diagram', input, output, '--quality', 'standard']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const html = fs.readFileSync(output, 'utf8');
+  const points = html.match(/data-edge-id="source-target"[^>]*data-composition-points="([^"]+)"/)?.[1];
+  assert.ok(points, 'expected routed relationship points');
+  assert.ok(points.split(';').length >= 4, points);
+  assert.ok(points.split(';').some((point) => {
+    const y = Number(point.split(',')[1]);
+    return y < 94 || y > 190;
+  }), points);
+});
