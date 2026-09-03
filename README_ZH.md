@@ -156,6 +156,9 @@ node archify/bin/archify.mjs guide "展示带 Redis 缓存未命中的 API 请�
 node archify/bin/archify.mjs guide "梳理 Kafka Topic、消费者组、重放和死信队列" --json
 ```
 
+对于 Java/Spring 仓库，可以按 Controller 生成聚焦 Endpoint 的类图；超过三个路由时自动拆分。使用 `--controller TraineeController` 只生成一个 Controller，或使用 `--locale ru` 生成俄文索引。详细约束见 [Endpoint 提取说明](archify/references/endpoint-extraction.md)。
+`node archify/bin/archify.mjs extract endpoints --repo-root /path/to/project --output /tmp/endpoint-diagrams`
+
 Workflow 用泳道保持主路径清晰：
 
 ![Workflow 示例](docs/assets/archify-workflow.png)

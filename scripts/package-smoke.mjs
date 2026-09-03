@@ -217,6 +217,35 @@ try {
   run(['demo', path.join(scratch, 'demo')]);
   run(['examples']);
 
+  const endpointFixture = path.join(scratch, 'java-endpoints');
+  const endpointSource = path.join(endpointFixture, 'src', 'main', 'java', 'smoke');
+  fs.mkdirSync(endpointSource, { recursive: true });
+  fs.writeFileSync(path.join(endpointSource, 'SmokeController.java'), `package smoke;
+@org.springframework.web.bind.annotation.RestController
+@org.springframework.web.bind.annotation.RequestMapping("/smoke")
+public class SmokeController {
+  private SmokeService service;
+  @org.springframework.web.bind.annotation.GetMapping("/{id}")
+  public SmokeResponse find(Long id) { return service.find(id); }
+}
+`);
+  fs.writeFileSync(path.join(endpointSource, 'SmokeService.java'), `package smoke;
+public class SmokeService {
+  public SmokeResponse find(Long id) { return new SmokeResponse(); }
+}
+`);
+  fs.writeFileSync(path.join(endpointSource, 'SmokeResponse.java'), 'package smoke; public class SmokeResponse {}\n');
+  const endpointOutput = path.join(scratch, 'endpoint-output');
+  const endpointReceipt = JSON.parse(run([
+    'extract', 'endpoints', '--repo-root', endpointFixture, '--output', endpointOutput, '--json',
+  ]));
+  if (!endpointReceipt.ok || endpointReceipt.controllers !== 1 || endpointReceipt.diagrams !== 1) {
+    throw new Error('packaged endpoint extraction returned an invalid receipt');
+  }
+  if (!fs.existsSync(path.join(endpointOutput, 'index.html')) || !fs.existsSync(path.join(endpointOutput, 'manifest.json'))) {
+    throw new Error('packaged endpoint extraction omitted its index or manifest');
+  }
+
   const fixtures = [
     ['architecture', 'production-deployment.architecture.json'],
     ['workflow', 'agent-tool-call.workflow.json'],

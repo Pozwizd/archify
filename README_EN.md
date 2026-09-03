@@ -160,6 +160,10 @@ node archify/bin/archify.mjs guide "Show an API request with Redis cache miss"
 node archify/bin/archify.mjs guide "Map Kafka topics, consumer groups, replay, and DLQ" --json
 ```
 
+For a Java/Spring repository, generate endpoint-focused class diagrams grouped by controller; controllers with more than three routes split automatically. Use `--controller TraineeController` for one controller or `--locale ru` for a Russian index. See the [endpoint extraction contract](archify/references/endpoint-extraction.md).
+
+`node archify/bin/archify.mjs extract endpoints --repo-root /path/to/project --output /tmp/endpoint-diagrams`
+
 Workflow keeps the happy path clear across lanes:
 
 ![Workflow example](docs/assets/archify-workflow.png)

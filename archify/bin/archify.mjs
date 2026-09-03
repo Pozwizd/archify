@@ -19,6 +19,7 @@ function usage() {
   archify deliver <type> <input.json> [output.html] [--json] [--open] [--quality standard|showcase] [--repo-root path (architecture only)]
   archify preview <type> <input.json> [output.html] [--no-open] [--quality standard|showcase] [--repo-root path (architecture only)]
   archify validate <type> <input.json> [--json] [--layout-json] [--quality standard|showcase] [--repo-root path (architecture only)]
+  archify extract endpoints --repo-root <path> --output <directory> [--controller name] [--package prefix] [--locale en|ru] [--scenarios-per-diagram 1..5] [--json]
   archify migrate workflow <old.json> <new.json> --to-schema 2 [--json]
   archify inspect <type> <input.json>
   archify check <output.html>
@@ -1248,6 +1249,13 @@ async function commandDoctor() {
     missing: fs.existsSync(visualCheckRuntime) ? 0 : 1,
   });
 
+  const endpointExtractorRuntime = path.join(skillRoot, 'extractors/java/extract-endpoints.mjs');
+  checks.push({
+    label: 'Java/Spring endpoint extractor',
+    ok: fs.existsSync(endpointExtractorRuntime),
+    missing: fs.existsSync(endpointExtractorRuntime) ? 0 : 1,
+  });
+
   const outputPathRuntime = path.join(skillRoot, 'renderers/shared/output-path.mjs');
   checks.push({
     label: 'Output path safety runtime',
@@ -1932,6 +1940,15 @@ function commandValidate(args) {
   if (exitCode !== 0) process.exitCode = exitCode;
 }
 
+function commandExtract(args) {
+  if (args[0] !== 'endpoints') fail('extract currently supports the "endpoints" target only.');
+  const result = runNode([
+    path.join(skillRoot, 'extractors/java/extract-endpoints.mjs'),
+    ...args.slice(1),
+  ]);
+  if (result.status !== 0) process.exitCode = result.status ?? 1;
+}
+
 const [command, ...args] = process.argv.slice(2);
 
 switch (command) {
@@ -1955,6 +1972,9 @@ switch (command) {
     break;
   case 'validate':
     commandValidate(args);
+    break;
+  case 'extract':
+    commandExtract(args);
     break;
   case 'migrate':
     await commandMigrate(args);
