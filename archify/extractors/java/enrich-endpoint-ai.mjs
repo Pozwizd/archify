@@ -1,4 +1,5 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -153,62 +154,210 @@ function analysisCards(analysis, endpoint, controller, locale) {
   ];
 }
 
-export function enrichEndpointDiagramsWithCodex(projection, root, options = {}) {
-  const diagrams = projection.diagrams;
-  if (!diagrams.length) return { provider: 'codex', analyses: 0 };
-  if (diagrams.some((item) => item.endpoints.length !== 1)) fail('--ai requires one endpoint per diagram. Remove --scenarios-per-diagram or set it to 1.');
+function repositoryFingerprint(root) {
+  const hash = crypto.createHash('sha256');
+  const ignored = new Set(['.git', '.idea', '.gradle', 'build', 'target', 'node_modules', 'out']);
+  const visit = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
+      if (entry.isSymbolicLink() || ignored.has(entry.name)) continue;
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(absolute);
+      else if (entry.isFile() && entry.name.endsWith('.java')) {
+        hash.update(path.relative(root, absolute).replaceAll('\\', '/'));
+        hash.update('\0');
+        hash.update(fs.readFileSync(absolute));
+        hash.update('\0');
+      }
+    }
+  };
+  visit(root);
+  return hash.digest('hex');
+}
+
+function cachePathFor(cacheDir, diagram, fingerprint, options) {
+  const identity = crypto.createHash('sha256').update(JSON.stringify({
+    version: 1,
+    diagram: diagram.id,
+    endpoint: diagram.endpoints[0],
+    fingerprint,
+    locale: options.locale,
+    model: options.aiModel || 'configured-default',
+    reasoning: options.aiReasoning || 'configured-default',
+  })).digest('hex').slice(0, 16);
+  return path.join(cacheDir, `${diagram.id}.${identity}.json`);
+}
+
+function validateAnalyses(parsed, diagrams, root) {
   const analysisIds = diagrams.map((item) => item.id);
+  const analyses = Array.isArray(parsed?.analyses) ? parsed.analyses : [];
+  const byId = new Map();
+  for (const analysis of analyses) {
+    if (!analysisIds.includes(analysis.analysisId) || byId.has(analysis.analysisId)) fail(`unexpected or duplicate analysisId: ${analysis.analysisId}`);
+    normalizeAnalysis(analysis);
+    analysis.evidence = normalizeEvidence(root, analysis.evidence || []);
+    const diagram = diagrams.find((item) => item.id === analysis.analysisId);
+    const projectedFiles = new Set(diagram.evidence.map((item) => item.path));
+    const citedFiles = new Set(analysis.evidence.map((item) => item.path));
+    if (projectedFiles.size > 1 && citedFiles.size < 2) fail(`model cited too little source diversity for ${analysis.analysisId}.`);
+    byId.set(analysis.analysisId, analysis);
+  }
+  if (byId.size !== analysisIds.length) fail(`expected ${analysisIds.length} analyses, received ${byId.size}`);
+  return byId;
+}
+
+function runCodexProcess(binary, args, prompt, outputPath, activeChildren) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(binary, args, {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, NO_COLOR: '1' },
+    });
+    activeChildren.add(child);
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      activeChildren.delete(child);
+      if (error) reject(error); else resolve();
+    };
+    const append = (current, chunk) => `${current}${chunk}`.slice(-8 * 1024 * 1024);
+    child.stdout.on('data', (chunk) => { stdout = append(stdout, chunk); });
+    child.stderr.on('data', (chunk) => { stderr = append(stderr, chunk); });
+    child.stdin.on('error', (error) => finish(error));
+    child.on('error', (error) => finish(error));
+    child.on('close', (code, signal) => {
+      if (code !== 0) finish(new Error((stderr || stdout || `Codex exited with ${code ?? signal}`).trim()));
+      else if (!fs.existsSync(outputPath)) finish(new Error('Codex did not write a structured response.'));
+      else finish();
+    });
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(new Error('Codex endpoint batch exceeded the 15 minute timeout.'));
+    }, 15 * 60 * 1000);
+    child.stdin.end(prompt);
+  });
+}
+
+async function analyzeBatch(diagrams, root, options, binary, activeChildren) {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'archify-endpoint-ai-'));
   const schemaPath = path.join(temporary, 'response.schema.json');
   const outputPath = path.join(temporary, 'response.json');
   try {
-    let parsed;
-    const schema = responseSchema(analysisIds);
+    const schema = responseSchema(diagrams.map((item) => item.id));
     const prompt = promptFor(diagrams, options.locale);
     fs.writeFileSync(schemaPath, `${JSON.stringify(schema, null, 2)}\n`);
+    let parsed;
     if (options.codexRunner) {
-      parsed = options.codexRunner({ prompt, schema, root });
+      parsed = await options.codexRunner({ prompt, schema, root });
     } else {
-      const binary = resolveCodexBinary();
       const args = [
         'exec', '--ephemeral', '--ignore-rules', '--sandbox', 'read-only', '--skip-git-repo-check',
         '--cd', root, '--output-schema', schemaPath, '--output-last-message', outputPath, '--color', 'never',
       ];
       if (options.aiModel) args.push('--model', options.aiModel);
+      if (options.aiReasoning) args.push('--config', `model_reasoning_effort="${options.aiReasoning}"`);
       args.push('-');
-      const result = spawnSync(binary, args, {
-        encoding: 'utf8',
-        input: prompt,
-        timeout: 15 * 60 * 1000,
-        maxBuffer: 8 * 1024 * 1024,
-        env: { ...process.env, NO_COLOR: '1' },
-      });
-      if (result.error) fail(result.error.message);
-      if (result.status !== 0) fail((result.stderr || result.stdout || `Codex exited with ${result.status}`).trim());
-      if (!fs.existsSync(outputPath)) fail('Codex did not write a structured response.');
+      await runCodexProcess(binary, args, prompt, outputPath, activeChildren);
       try { parsed = JSON.parse(fs.readFileSync(outputPath, 'utf8')); } catch (error) { fail(`invalid JSON response: ${error.message}`); }
     }
-    const analyses = Array.isArray(parsed.analyses) ? parsed.analyses : [];
-    const byId = new Map();
-    for (const analysis of analyses) {
-      if (!analysisIds.includes(analysis.analysisId) || byId.has(analysis.analysisId)) fail(`unexpected or duplicate analysisId: ${analysis.analysisId}`);
-      normalizeAnalysis(analysis);
-      analysis.evidence = normalizeEvidence(root, analysis.evidence || []);
-      const diagram = diagrams.find((item) => item.id === analysis.analysisId);
-      const projectedFiles = new Set(diagram.evidence.map((item) => item.path));
-      const citedFiles = new Set(analysis.evidence.map((item) => item.path));
-      if (projectedFiles.size > 1 && citedFiles.size < 2) fail(`model cited too little source diversity for ${analysis.analysisId}.`);
-      byId.set(analysis.analysisId, analysis);
-    }
-    if (byId.size !== analysisIds.length) fail(`expected ${analysisIds.length} analyses, received ${byId.size}`);
-    for (const diagram of diagrams) {
-      const endpoint = diagram.endpoints[0];
-      const analysis = byId.get(diagram.id);
-      diagram.diagram.cards = analysisCards(analysis, endpoint, diagram.controller, options.locale);
-      diagram.aiAnalysis = analysis;
-    }
-    return { provider: 'codex', model: options.aiModel || 'configured-default', analyses: byId.size };
+    return validateAnalyses(parsed, diagrams, root);
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }
+}
+
+export async function enrichEndpointDiagramsWithCodex(projection, root, options = {}) {
+  const diagrams = projection.diagrams;
+  if (!diagrams.length) return { provider: 'codex', analyses: 0 };
+  if (diagrams.some((item) => item.endpoints.length !== 1)) fail('--ai requires one endpoint per diagram. Remove --scenarios-per-diagram or set it to 1.');
+  const batchSize = options.aiBatchSize || 1;
+  const concurrency = Math.min(options.aiConcurrency || 2, diagrams.length);
+  const maxRetries = options.aiRetries ?? 2;
+  const cacheDir = options.aiCacheDir || path.join(os.tmpdir(), 'archify-endpoint-ai-cache');
+  if (fs.existsSync(cacheDir) && !options.aiResume) fail(`AI cache already exists: ${cacheDir}. Use --ai-resume or choose a new output directory.`);
+  fs.mkdirSync(cacheDir, { recursive: true });
+  const fingerprint = repositoryFingerprint(root);
+  const analyses = new Map();
+  let reused = 0;
+  const pending = [];
+  for (const diagram of diagrams) {
+    const cachePath = cachePathFor(cacheDir, diagram, fingerprint, options);
+    if (options.aiResume && fs.existsSync(cachePath)) {
+      let parsed;
+      try { parsed = JSON.parse(fs.readFileSync(cachePath, 'utf8')); } catch { parsed = null; }
+      try {
+        const cached = validateAnalyses({ analyses: [parsed?.analysis] }, [diagram], root).get(diagram.id);
+        analyses.set(diagram.id, cached);
+        reused += 1;
+        continue;
+      } catch {
+        fs.rmSync(cachePath, { force: true });
+      }
+    }
+    pending.push({ diagram, cachePath });
+  }
+  const batches = [];
+  for (let index = 0; index < pending.length; index += batchSize) batches.push(pending.slice(index, index + batchSize));
+  const binary = options.codexRunner ? null : resolveCodexBinary();
+  const activeChildren = new Set();
+  let nextBatch = 0;
+  let completed = reused;
+  let retries = 0;
+  let stopped = false;
+  const worker = async () => {
+    while (!stopped) {
+      const batchIndex = nextBatch;
+      nextBatch += 1;
+      if (batchIndex >= batches.length) return;
+      const batch = batches[batchIndex];
+      const ids = batch.map((item) => item.diagram.id).join(', ');
+      process.stderr.write(`[AI batch ${batchIndex + 1}/${batches.length}; ready ${completed}/${diagrams.length}] ${ids}\n`);
+      let result;
+      let lastError;
+      for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+        try {
+          result = await analyzeBatch(batch.map((item) => item.diagram), root, options, binary, activeChildren);
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+          if (stopped) throw error;
+          if (attempt < maxRetries) {
+            retries += 1;
+            process.stderr.write(`[AI retry ${attempt + 1}/${maxRetries}] ${ids}: ${error.message}\n`);
+          }
+        }
+      }
+      if (lastError) throw lastError;
+      for (const item of batch) {
+        const analysis = result.get(item.diagram.id);
+        const temporaryCache = `${item.cachePath}.${process.pid}.tmp`;
+        fs.writeFileSync(temporaryCache, `${JSON.stringify({ schemaVersion: 1, analysis }, null, 2)}\n`);
+        fs.renameSync(temporaryCache, item.cachePath);
+        analyses.set(item.diagram.id, analysis);
+        completed += 1;
+      }
+    }
+  };
+  try {
+    await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(1, batches.length)) }, () => worker()));
+  } catch (error) {
+    stopped = true;
+    for (const child of activeChildren) child.kill();
+    throw error;
+  }
+  if (analyses.size !== diagrams.length) fail(`expected ${diagrams.length} analyses, received ${analyses.size}`);
+  for (const diagram of diagrams) {
+    const endpoint = diagram.endpoints[0];
+    const analysis = analyses.get(diagram.id);
+    diagram.diagram.cards = analysisCards(analysis, endpoint, diagram.controller, options.locale);
+    diagram.aiAnalysis = analysis;
+  }
+  return {
+    provider: 'codex', model: options.aiModel || 'configured-default', analyses: analyses.size,
+    batchSize, concurrency, reused, retries,
+  };
 }

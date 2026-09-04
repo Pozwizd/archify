@@ -19,10 +19,10 @@ Use this bounded path for ordinary generation. Do not read the optional Viewer R
 For endpoint-focused diagrams from a Java/Spring repository, prefer the evidence-constrained extractor over manual reconstruction:
 
 ```bash
-node bin/archify.mjs extract endpoints --repo-root <project> --output <directory> [--mode onboarding|reference] [--controller Name] [--locale en|ru] [--ai] [--ai-model model]
+node bin/archify.mjs extract endpoints --repo-root <project> --output <directory> [--mode onboarding|reference] [--controller Name] [--locale en|ru] [--ai] [--ai-model model] [--ai-batch-size 1..5] [--ai-concurrency 1..4] [--ai-retries 0..3] [--ai-resume]
 ```
 
-It defaults to onboarding mode: one compact diagram per endpoint, numbered semantic stages, controller-grouped navigation, reading guidance, and only scenario-relevant members. Use `--mode reference` for the denser view with up to three isolated endpoint lanes per diagram. Source files and lines remain in `manifest.json`. Read `references/endpoint-extraction.md` only when changing extraction depth, filters, or output limits.
+It defaults to onboarding mode: one compact diagram per endpoint, numbered semantic stages, controller-grouped navigation, an entry-point card, and only scenario-relevant members. Use `--mode reference` for the denser view with up to three isolated endpoint lanes per diagram. AI mode defaults to one endpoint per model request, two concurrent requests, two targeted retries, and can resume validated fingerprint-matched cache entries after failure. Source files and lines remain in `manifest.json`. Read `references/endpoint-extraction.md` only when changing extraction depth, filters, AI batching, or output limits.
 
 1. Choose `architecture`, `workflow`, `sequence`, `dataflow`, `lifecycle`, or `class-diagram` from the question.
 2. Read one matching schema in `schemas/`, `schemas/common.schema.json`, and one matching JSON example in `examples/`. Read only those files. Fresh authorship means new stable IDs, domain wording, and layout; use the example for field shape, not facts. New workflow sources use `schema_version: 2` and its readable layout contract; keep `schema_version: 1` only when preserving an existing workflow's fixed geometry. When real product identity matters, query `node bin/archify.mjs brands "<name>" --json`; read `references/brand-marks.md` only for an unknown brand with a user-provided URL.

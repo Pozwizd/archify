@@ -156,7 +156,7 @@ node archify/bin/archify.mjs guide "展示带 Redis 缓存未命中的 API 请�
 node archify/bin/archify.mjs guide "梳理 Kafka Topic、消费者组、重放和死信队列" --json
 ```
 
-对于 Java/Spring 仓库，可以按 Controller 生成聚焦 Endpoint 的类图。默认 onboarding 模式为每个 Endpoint 创建一张紧凑、带编号的场景图，并生成按 Controller 分组的学习索引；使用 `--mode reference` 可生成信息更密集的多场景图。共享类型只显示相关成员。使用 `--controller TraineeController` 只生成一个 Controller，或使用 `--locale ru` 生成俄文索引。添加 `--ai` 后，已安装的 Codex CLI 会用基于源码证据的实现说明替换通用提示。详细约束见 [Endpoint 提取说明](archify/references/endpoint-extraction.md)。
+对于 Java/Spring 仓库，可以按 Controller 生成聚焦 Endpoint 的类图。默认 onboarding 模式为每个 Endpoint 创建一张紧凑、带编号的场景图，并生成按 Controller 分组的学习索引；使用 `--mode reference` 可生成信息更密集的多场景图。共享类型只显示相关成员。使用 `--controller TraineeController` 只生成一个 Controller，或使用 `--locale ru` 生成俄文索引。添加 `--ai` 后，已安装的 Codex CLI 会用基于源码证据的实现说明替换通用提示。大型仓库可按单个 Endpoint 分批分析，并使用受限并发、自动重试和带源码指纹的 `--ai-resume` 缓存。详细约束见 [Endpoint 提取说明](archify/references/endpoint-extraction.md)。
 `node archify/bin/archify.mjs extract endpoints --repo-root /path/to/project --output /tmp/endpoint-diagrams`
 
 Workflow 用泳道保持主路径清晰：

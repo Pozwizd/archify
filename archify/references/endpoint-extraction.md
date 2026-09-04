@@ -32,8 +32,25 @@ The output directory must not already exist. A successful run writes:
 - `--locale en|ru` localizes the generated index and authored onboarding content; default `en`. Java identifiers and routes are never translated. The generic Viewer controls currently fall back to English for Russian output.
 - `--ai` asks an installed and authenticated Codex CLI to inspect the selected Java code in a read-only sandbox. It replaces the generic entry-point card with a purpose summary, ordered implementation steps, notable code-proven behavior, and source evidence. AI mode is opt-in, non-deterministic, and limited to onboarding output with one endpoint per diagram. It does not require a separate Archify API key, but source content may be processed according to the active Codex account and configuration.
 - `--ai-model model` optionally selects the Codex model and requires `--ai`; otherwise the configured Codex default is used.
+- `--ai-batch-size 1..5` controls how many endpoints share one model request; default `1`, so every endpoint is analyzed independently.
+- `--ai-concurrency 1..4` bounds simultaneous Codex processes; default `2`.
+- `--ai-reasoning none|low|medium|high|xhigh|max` optionally overrides the configured model reasoning effort.
+- `--ai-retries 0..3` repeats only a failed endpoint batch after invalid JSON, incomplete prose, bad evidence, or a process failure; default `2`.
+- `--ai-resume` reuses validated endpoint analyses from `<output>.ai-cache`. The cache key includes the selected model, locale, endpoint identity, reasoning effort, and a SHA-256 fingerprint of all repository Java source. A failed run keeps the cache; a successful run removes it after embedding every analysis in `manifest.json`.
 - `--json` prints a machine-readable receipt.
 
 AI output is accepted only as structured JSON. Archify verifies that every requested diagram has exactly one analysis and that every cited repository-relative file and line exists. Invalid or incomplete evidence fails the extraction instead of silently producing an ungrounded explanation.
+
+For a large repository, prefer one endpoint per request with bounded concurrency and resumability:
+
+```bash
+node bin/archify.mjs extract endpoints \
+  --repo-root /path/to/project \
+  --output /tmp/endpoint-diagrams \
+  --locale ru \
+  --ai --ai-model gpt-5.6-luna \
+  --ai-batch-size 1 --ai-concurrency 4 --ai-reasoning low \
+  --ai-retries 2 --ai-resume
+```
 
 Directories named `.git`, `.idea`, `.gradle`, `build`, `target`, `node_modules`, and `out`, plus symbolic links, are skipped. When the type cap omits secondary types, the manifest and index retain an explicit warning.

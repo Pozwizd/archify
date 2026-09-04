@@ -107,15 +107,19 @@ test('extract endpoints defaults to one compact onboarding scenario per diagram'
   assert.doesNotMatch(JSON.stringify(source.cards), /Как читать/);
 });
 
-test('AI enrichment replaces generic guidance with evidence-grounded implementation notes', () => {
+test('AI enrichment analyzes one endpoint per batch and resumes from validated cache', async () => {
   const model = analyzeJavaProject(fixture);
   const projection = projectControllerDiagrams(model, {
     mode: 'onboarding', locale: 'ru', relationDepth: 2, maxTypes: 7, scenariosPerDiagram: 1, excludes: [],
   });
+  const cacheDir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'archify-endpoint-ai-test-')), 'cache');
   let receivedPrompt = '';
-  const result = enrichEndpointDiagramsWithCodex(projection, fixture, {
-    locale: 'ru',
+  let calls = 0;
+  const options = {
+    locale: 'ru', aiBatchSize: 1, aiConcurrency: 2, aiCacheDir: cacheDir,
     codexRunner({ prompt, schema }) {
+      calls += 1;
+      if (calls === 1) throw new Error('simulated transient model failure');
       receivedPrompt = prompt;
       return {
         analyses: schema.properties.analyses.items.properties.analysisId.enum.map((analysisId) => {
@@ -131,12 +135,23 @@ test('AI enrichment replaces generic guidance with evidence-grounded implementat
         }),
       };
     },
-  });
+  };
+  const result = await enrichEndpointDiagramsWithCodex(projection, fixture, options);
   assert.equal(result.analyses, projection.diagrams.length);
+  assert.equal(result.batchSize, 1);
+  assert.equal(result.retries, 1);
+  assert.equal(calls, projection.diagrams.length + 1);
   assert.match(receivedPrompt, /in Russian/);
   assert.ok(projection.diagrams.every((item) => item.diagram.cards.length === 4));
   assert.ok(projection.diagrams.every((item) => item.diagram.cards[0].title === 'Что делает сценарий'));
   assert.ok(projection.diagrams.every((item) => item.aiAnalysis.evidence.length >= 1));
+
+  const resumed = await enrichEndpointDiagramsWithCodex(projection, fixture, {
+    ...options,
+    aiResume: true,
+    codexRunner() { throw new Error('valid cached analyses should be reused'); },
+  });
+  assert.equal(resumed.reused, projection.diagrams.length);
 });
 
 test('extract endpoints limits AI explanations to one-scenario onboarding diagrams', () => {

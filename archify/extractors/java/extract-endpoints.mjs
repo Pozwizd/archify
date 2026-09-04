@@ -22,14 +22,22 @@ function parsePositive(value, option, fallback, maximum) {
   return number;
 }
 
+function parseNonNegative(value, option, fallback, maximum) {
+  if (value === undefined) return fallback;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0 || number > maximum) fail(`${option} must be an integer from 0 to ${maximum}.`);
+  return number;
+}
+
 function parseArgs(argv) {
   const options = { excludes: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--json') { options.json = true; continue; }
     if (argument === '--ai') { options.ai = true; continue; }
+    if (argument === '--ai-resume') { options.aiResume = true; continue; }
     const [name, inline] = argument.split('=', 2);
-    const supported = new Set(['--repo-root', '--output', '--controller', '--package', '--exclude', '--relation-depth', '--max-types', '--scenarios-per-diagram', '--locale', '--mode', '--ai-model']);
+    const supported = new Set(['--repo-root', '--output', '--controller', '--package', '--exclude', '--relation-depth', '--max-types', '--scenarios-per-diagram', '--locale', '--mode', '--ai-model', '--ai-batch-size', '--ai-concurrency', '--ai-reasoning', '--ai-retries']);
     if (!supported.has(name)) fail(`Unknown extract endpoints option "${argument}".`);
     const value = inline ?? argv[++index];
     if (!value || value.startsWith('--')) fail(`${name} requires a value.`);
@@ -37,6 +45,7 @@ function parseArgs(argv) {
     else options[{
       '--repo-root': 'repoRoot', '--output': 'output', '--controller': 'controller', '--package': 'packageName',
       '--relation-depth': 'relationDepth', '--max-types': 'maxTypes', '--scenarios-per-diagram': 'scenariosPerDiagram', '--locale': 'locale', '--mode': 'mode', '--ai-model': 'aiModel',
+      '--ai-batch-size': 'aiBatchSize', '--ai-concurrency': 'aiConcurrency', '--ai-reasoning': 'aiReasoning', '--ai-retries': 'aiRetries',
     }[name]] = value;
   }
   if (!options.repoRoot || !options.output) fail('extract endpoints requires --repo-root and --output.');
@@ -50,6 +59,11 @@ function parseArgs(argv) {
   if (options.ai && options.mode !== 'onboarding') fail('--ai requires --mode onboarding.');
   if (options.ai && options.scenariosPerDiagram !== 1) fail('--ai requires --scenarios-per-diagram 1.');
   if (options.aiModel && !options.ai) fail('--ai-model requires --ai.');
+  if ((options.aiBatchSize || options.aiConcurrency || options.aiReasoning || options.aiRetries !== undefined || options.aiResume) && !options.ai) fail('AI batching options require --ai.');
+  options.aiBatchSize = parsePositive(options.aiBatchSize, '--ai-batch-size', 1, 5);
+  options.aiConcurrency = parsePositive(options.aiConcurrency, '--ai-concurrency', 2, 4);
+  options.aiRetries = parseNonNegative(options.aiRetries, '--ai-retries', 2, 3);
+  if (options.aiReasoning && !['none', 'low', 'medium', 'high', 'xhigh', 'max'].includes(options.aiReasoning)) fail('--ai-reasoning must be none, low, medium, high, xhigh, or max.');
   return options;
 }
 
@@ -127,13 +141,14 @@ function ensureSafeTarget(repoRoot, output) {
   return { root, target };
 }
 
-function main() {
+async function main() {
   const options = parseArgs(process.argv.slice(2));
   const { root, target } = ensureSafeTarget(options.repoRoot, options.output);
   const model = analyzeJavaProject(root, options);
   const projection = projectControllerDiagrams(model, options);
   if (!projection.diagrams.length) fail(projection.warnings.at(-1) || 'No endpoint diagrams could be produced.');
-  const ai = options.ai ? enrichEndpointDiagramsWithCodex(projection, root, options) : null;
+  options.aiCacheDir = `${target}.ai-cache`;
+  const ai = options.ai ? await enrichEndpointDiagramsWithCodex(projection, root, options) : null;
   const parent = path.dirname(target);
   fs.mkdirSync(parent, { recursive: true });
   const staging = fs.mkdtempSync(path.join(parent, '.archify-endpoints-'));
@@ -186,6 +201,8 @@ function main() {
         locale: options.locale,
         ai: Boolean(options.ai),
         ...(options.aiModel ? { aiModel: options.aiModel } : {}),
+        ...(options.ai ? { aiBatchSize: options.aiBatchSize, aiConcurrency: options.aiConcurrency, aiRetries: options.aiRetries, aiResume: Boolean(options.aiResume) } : {}),
+        ...(options.aiReasoning ? { aiReasoning: options.aiReasoning } : {}),
         ...(options.controller ? { controller: options.controller } : {}),
         ...(options.packageName ? { package: options.packageName } : {}),
       },
@@ -196,6 +213,7 @@ function main() {
     fs.writeFileSync(path.join(staging, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
     fs.writeFileSync(path.join(staging, 'index.html'), indexHtml(entries, root, projection.warnings, options.locale, options.mode));
     fs.renameSync(staging, target);
+    if (options.ai && fs.existsSync(options.aiCacheDir)) fs.rmSync(options.aiCacheDir, { recursive: true, force: true });
     const receipt = { ok: true, command: 'extract endpoints', mode: options.mode, output: target, ...manifest.generatedFrom, diagrams: entries.length, ...(ai ? { ai } : {}), warnings: projection.warnings };
     if (options.json) process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);
     else {
@@ -209,9 +227,7 @@ function main() {
   }
 }
 
-try {
-  main();
-} catch (error) {
+main().catch((error) => {
   console.error(`Endpoint extraction failed: ${error.message}`);
   process.exitCode = 1;
-}
+});
